@@ -24,9 +24,8 @@ from email.utils import getaddresses
 import numpy as np
 from .neuralnetwork import ClassifierNetwork
 from neon.layers import Multicost, GeneralizedCost
-from neon.transforms import CrossEntropyMulti, MeanSquared
+from neon.transforms import CrossEntropyMulti, SumSquared
 from bs4 import BeautifulSoup
-import EFZP as zp
 
 class EmailClassifier(object):
     class NeuralEmailRepresentation(object):
@@ -66,7 +65,7 @@ class EmailClassifier(object):
         self.num_body_words = num_body_words
 
         self.neuralnet.initialize(self.zero_tensors, cost=Multicost([GeneralizedCost(CrossEntropyMulti()),
-                                                                     GeneralizedCost(MeanSquared())]))
+                                                                     GeneralizedCost(SumSquared())]))
 
     @property
     def be(self):
