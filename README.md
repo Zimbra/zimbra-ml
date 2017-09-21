@@ -93,33 +93,3 @@
 
 <span class="c1">It would also help if we could leverage all users and the current analytics plan by marketing the smart folders as “learning” folders, which really can learn in aggregate if people actively use them. Rather than collect PID from people who use the folders, we could relate some features we have defined above to the messages in each folder, especially to learn about how those features relate to what is “important” or possibly help exclude certain types of mail broadly.</span>
 
-# <span class="c2">Implementation Notes</span>
-
-<span class="c1">[miketout 9/19/2017]: I have implemented an initial neural network model, written a loader for the GloVe word vectors, a simple feature mapper, and an email parser/converter from email format to neural network input. As suggested in a meeting, I also integrated EFZP email parser for extracting body, signature, salutation, etc.</span>
-
-<span class="c1"></span>
-
-<span class="c1">I then ran some tests with a simple LSTM network, using the first 8 words of the subject and 22 words of the body to get a sense of the performance impact. Initially, classifying an email on an untrained network was taking a fully discounted time (including my own use of the machine, which was my notebook, so not super precise) of ~110 ms per email on a test of 1000 emails of the Enron dataset.</span>
-
-<span class="c1">  
-Since the EFZP parser was not strictly necessary, I wanted to determine how much overhead the neural networks were taking vs. the more standard parsing taking place in EFZP, so I tested without EFZP as well. I was surprised to learn that the time for each email dropped to 30ms, which seems pretty good for neural network analysis on a non-accelerated machine. If we replace the work done in separating salutation/signature, etc. by adding a few more words for neural network classification, I believe we would end up with better classification and performance as well. Based on this, I do not expect to use EFZP, though I may write some of my own parsing if it turns out to be helpful. These times were taken on a non-accelerated notebook with a 2.4Ghz Intel I7, quad core processor.</span>
-
-<span class="c1"></span>
-
-<span class="c1">I am currently looking for categorized email datasets that would be suitable to test the accuracy of the planned approach as well as the current neural networks architecture being used. While the current work quantifies the performance impact of the approach within an order of magnitude, we still don’t have data on the potential for accuracy.</span>
-
-<span class="c1"></span>
-
-<span class="c1">I have identified the following datasets for additional consideration. I have included one international email dataset as well, since there may be a way to identify languages using the current approach as well. I’ve also included a link to another email classification project using neural networks that also did more up front processing beforehand. I believe we are likely not to need that processing:</span>
-
-<span class="c7">[http://bailando.sims.berkeley.edu/enron_email.html](https://www.google.com/url?q=http://bailando.sims.berkeley.edu/enron_email.html&sa=D&ust=1505953497843000&usg=AFQjCNHb6vpuEhwq5obDqhva-UiBIrGh8g)</span>
-
-<span class="c7">[http://csmining.org/index.php/spam-email-datasets-.html](https://www.google.com/url?q=http://csmining.org/index.php/spam-email-datasets-.html&sa=D&ust=1505953497843000&usg=AFQjCNG-YKzHM-jloA2g3_LTS-8ImZrPxg)</span>
-
-<span class="c7">[http://www.edrm.net/resources/data-sets/edrm-internationalization-data-set/](https://www.google.com/url?q=http://www.edrm.net/resources/data-sets/edrm-internationalization-data-set/&sa=D&ust=1505953497844000&usg=AFQjCNGTf9k8fyT9PWaO8cAWj0Lw5gHgEQ)</span>
-
-<span class="c7">[http://www.andreykurenkov.com/writing/organizing-my-emails-with-a-neural-net/](https://www.google.com/url?q=http://www.andreykurenkov.com/writing/organizing-my-emails-with-a-neural-net/&sa=D&ust=1505953497844000&usg=AFQjCNE49A-ntJFQGUFGjpQFAfbI8p3sZg)</span>
-
-<span class="c1"></span>
-
-<span class="c1"></span>
