@@ -177,7 +177,7 @@ if __name__ == '__main__':
                                  be.array(train_df.loc[:, overlapping_classes + exclusive_classes].values))
 
         callbacks = Callbacks(classifier.neuralnet, **options.callback_args)
-        print('Training neural networks on {} samples for {} epochs'.format(len(train_df), options.num_epochs))
+        print('Training neural networks on {} samples for {} epochs'.format(len(train_df), options.epochs))
         classifier.fit(train, optimizer, options.num_epochs, callbacks)
 
         # now evaluate
