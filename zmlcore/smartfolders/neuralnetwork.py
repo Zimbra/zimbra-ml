@@ -14,7 +14,7 @@ from neon.transforms import Softmax, Rectlin, Logistic
 
 
 class ClassifierNetwork(Model):
-    def __init__(self, overlapping_classes=None, exclusive_classes=None):
+    def __init__(self, overlapping_classes=None, exclusive_classes=None, optimizer=Adam()):
         if overlapping_classes is None:
             self.overlapping_classes = ['important', 'automated']
         else:
@@ -37,5 +37,5 @@ class ClassifierNetwork(Model):
             Tree([[SkipNode(), output_branch, Affine(len(self.overlapping_classes), init, activation=Logistic())],
                   [output_branch, Affine(len(self.exclusive_classes), init, activation=Softmax())]])
         ]
-        super(ClassifierNetwork, self).__init__(layers, optimizer=Adam())
+        super(ClassifierNetwork, self).__init__(layers, optimizer=optimizer)
 

@@ -7,7 +7,7 @@ Machine learning classifier for email.
 Initial implementation leverages primarily subject, address blocks, and body text. It performs the following processing:
 
 1. canonicalize subject and hash
-2. tokenize 10 words of subject and first 30 words of text for embed_dim x 40 LSTM input
+2. tokenize 8 words of subject and first 22 words of text for embed_dim x 30 LSTM input
 3. calculate contact/domain specific features (samedomain, sentto_recently, sentto_semirecently,
     relative_response_to_sender
 
@@ -25,6 +25,7 @@ import numpy as np
 from .neuralnetwork import ClassifierNetwork
 from neon.layers import Multicost, GeneralizedCost
 from neon.transforms import CrossEntropyMulti, SumSquared
+from neon.optimizers import Adam
 from bs4 import BeautifulSoup
 
 class EmailClassifier(object):
@@ -42,12 +43,14 @@ class EmailClassifier(object):
         def nn_input(self):
             return [self.recurrent, self.linear]
 
-    def __init__(self, vocab_path, model_path, num_analytics_features=4, num_subject_words=8, num_body_words=22):
+    def __init__(self, vocab_path, model_path, optimizer=Adam(),
+                 num_analytics_features=4, num_subject_words=8, num_body_words=22):
         """
         loads the vocabulary and sets up LSTM networks for classification.
         """
         self.neuralnet = ClassifierNetwork(overlapping_classes=['important', 'automated'],
-                                           exclusive_classes=['financial', 'shopping', 'social', 'travel', 'work'])
+                                           exclusive_classes=['financial', 'shopping', 'social', 'travel', 'business'],
+                                           optimizer=optimizer)
         self.wordvec_dimensions = 0
         self.vocab = self.load_vocabulary(vocab_path)
         assert self.wordvec_dimensions > 0
@@ -64,8 +67,12 @@ class EmailClassifier(object):
         self.num_subject_words = num_subject_words
         self.num_body_words = num_body_words
 
-        self.neuralnet.initialize(self.zero_tensors, cost=Multicost([GeneralizedCost(CrossEntropyMulti()),
-                                                                     GeneralizedCost(SumSquared())]))
+        self.cost = Multicost([GeneralizedCost(CrossEntropyMulti()), GeneralizedCost(SumSquared())])
+
+        self.neuralnet.initialize(self.zero_tensors, cost=self.cost)
+
+    def fit(self, dataset, optimizer, num_epochs, callbacks):
+        self.neuralnet.fit(dataset, self.cost, optimizer, num_epochs, callbacks)
 
     @property
     def be(self):
@@ -98,11 +105,21 @@ class EmailClassifier(object):
 
         ct = part.get_content_type()
         if ct == 'text/plain':
-            return part.get_payload(decode=True).decode('utf-8')
+            try:
+                result = part.get_payload(decode=True).decode(part.get_content_charset())
+            except:
+                try:
+                    result = part.get_payload(decode=True).decode('utf-8')
+                except:
+                    result = ''
+            return result
         elif ct == 'text/html':
-            text = BeautifulSoup(part.get_payload()).get_text()
+            try:
+                text = BeautifulSoup(part.get_payload(), 'html.parser').get_text()
+            except:
+                return ''
             lines=(line.strip() for line in text.splitlines())
-            chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
+            chunks = (phrase.strip() for line in lines for phrase in line.split(' '))
             return ''.join(chunk for chunk in chunks if chunk)
         else:
             return ''
@@ -121,22 +138,21 @@ class EmailClassifier(object):
         resent_key = 'resent'
         subject_key = 'subject'
         text_key = 'text'
-        body_key = 'body'
+
         emails = [{
             from_key: getaddresses(e.get_all(from_key, [])),
             to_key: getaddresses(e.get_all(to_key, [])),
             cc_key: getaddresses(e.get_all(cc_key, [])),
             resent_key: getaddresses(e.get_all('resent-to', []) + e.get_all('resent-cc', [])),
-            subject_key: e.get(subject_key, '').lower(),
-            # text_key: zp.parse(sum([self.extract_inline_text(p) for p in e.walk()])
-            text_key: sum([self.extract_inline_text(p) for p in e.walk()])
+            subject_key: e.get(subject_key, '').lower() if isinstance(e.get(subject_key, ''), str) else '',
+            text_key: ''.join([self.extract_inline_text(p) for p in e.walk()])
                 if e.is_multipart() else self.extract_inline_text(e)
         } for e in emails]
 
         nn_inputs = []
 
         for e in emails:
-            # unti we get contact analytics, we will generate the following contact related features from what we
+            # until we get contact analytics, we will generate the following contact related features from what we
             # currently do have:
             #   1. is this exclusively to me?
             #   2. is this a reply to an email I sent?
@@ -158,7 +174,7 @@ class EmailClassifier(object):
                 linear_input = [1.0 if (len(e[to_key]) == 1 and receiver_address == e[to_key][0]) else 0.0,
                                 1.0 if ('re:' in subject and receiver_address in to_key) else 0.0,
                                 1.0 if receiver_address in to_key else 0.0,
-                                1.0 if 'fw:' in subject else 0.0]
+                                1.0 if ('fw:' in subject or 'fwd:' in subject) else 0.0]
             else:
                 linear_input = [0.0, 0.0, 0.0, 1.0 if 'fw:' in subject else 0.0]
 
@@ -182,7 +198,5 @@ class EmailClassifier(object):
             emails = self.emails_to_nn_representation(emails, receiver_address=receiver_address)
 
         assert (isinstance(emails[0], EmailClassifier.NeuralEmailRepresentation))
-        result = []
-        for b in emails:
-            result += [self.neuralnet.fprop(b.nn_input, inference=inference)]
-        return result
+
+        return [[o.get(), x.get()] for o, x in [self.neuralnet.fprop(b.nn_input, inference=inference) for b in emails]]
