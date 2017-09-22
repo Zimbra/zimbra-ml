@@ -16,12 +16,12 @@ from neon.transforms import Softmax, Rectlin, Logistic
 class ClassifierNetwork(Model):
     def __init__(self, overlapping_classes=None, exclusive_classes=None, optimizer=Adam()):
         if overlapping_classes is None:
-            self.overlapping_classes = ['important', 'automated']
+            self.overlapping_classes = ['important']
         else:
             self.overlapping_classes = overlapping_classes
 
         if exclusive_classes is None:
-            self.exclusive_classes = ['financial', 'shopping', 'social', 'travel', 'business']
+            self.exclusive_classes = ['finance', 'promos', 'social', 'forums', 'updates']
         else:
             self.exclusive_classes = exclusive_classes
 

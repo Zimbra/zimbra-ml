@@ -19,7 +19,7 @@ from zmlcore.smartfolders.classifier import EmailClassifier
 from zmlcore.data.dataiterator import TrainingIterator
 import os, email, mailbox
 
-receiver_email = 'youremail@domain.com'
+receiver_email = 'michaeltoutonghi@gmail.com'
 
 # random percentage to holdout for validation when training
 holdout_pct = 0.1
@@ -66,10 +66,11 @@ if __name__ == '__main__':
     be = gen_backend(**extract_valid_args(options, gen_backend))
 
     optimizer = Adam(learning_rate=options.learning_rate)
-    classifier = EmailClassifier(options.glove, options.model_file, optimizer=optimizer)
 
     overlapping_classes = options.overlapping_classes.strip(' \"\'').split()
     exclusive_classes = options.exclusive_classes.strip(' \"\'').split()
+    classifier = EmailClassifier(options.glove, options.model_file, optimizer=optimizer,
+                                 overlapping_classes=overlapping_classes, exclusive_classes=exclusive_classes)
 
     # determine if we expect to use a csv file or a maildir as our data source
     if os.path.isfile(options.data_path):
@@ -171,14 +172,14 @@ if __name__ == '__main__':
 
         valid = TrainingIterator(classifier.emails_to_nn_representation(list(valid_df['message'].values),
                                                                         receiver_address=receiver_email),
-                                 be.array(valid_df.loc[:, overlapping_classes + exclusive_classes].values))
+                                 [be.array(a) for a in valid_df.loc[:, overlapping_classes + exclusive_classes].values])
         train = TrainingIterator(classifier.emails_to_nn_representation(list(train_df['message'].values),
                                                                         receiver_address=receiver_email),
-                                 be.array(train_df.loc[:, overlapping_classes + exclusive_classes].values))
+                                 [be.array(a) for a in train_df.loc[:, overlapping_classes + exclusive_classes].values])
 
         callbacks = Callbacks(classifier.neuralnet, **options.callback_args)
         print('Training neural networks on {} samples for {} epochs'.format(len(train_df), options.epochs))
-        classifier.fit(train, optimizer, options.num_epochs, callbacks)
+        classifier.fit(train, optimizer, options.epochs, callbacks)
 
         # now evaluate
         print('{} epochs complete, evaluating exclusive classes with misclassification metric')

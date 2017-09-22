@@ -29,27 +29,13 @@ from neon.optimizers import Adam
 from bs4 import BeautifulSoup
 
 class EmailClassifier(object):
-    class NeuralEmailRepresentation(object):
-        def __init__(self, recurrent, linear):
-            """
-            just provides a typed object to represent neural network representation of an e-mail
-            :param recurrent:
-            :param linear:
-            """
-            self.recurrent = recurrent
-            self.linear = linear
-
-        @property
-        def nn_input(self):
-            return [self.recurrent, self.linear]
-
-    def __init__(self, vocab_path, model_path, optimizer=Adam(),
+    def __init__(self, vocab_path, model_path, optimizer=Adam(), overlapping_classes=None, exclusive_classes=None,
                  num_analytics_features=4, num_subject_words=8, num_body_words=22):
         """
         loads the vocabulary and sets up LSTM networks for classification.
         """
-        self.neuralnet = ClassifierNetwork(overlapping_classes=['important', 'automated'],
-                                           exclusive_classes=['financial', 'shopping', 'social', 'travel', 'business'],
+        self.neuralnet = ClassifierNetwork(overlapping_classes=overlapping_classes,
+                                           exclusive_classes=exclusive_classes,
                                            optimizer=optimizer)
         self.wordvec_dimensions = 0
         self.vocab = self.load_vocabulary(vocab_path)
@@ -67,7 +53,7 @@ class EmailClassifier(object):
         self.num_subject_words = num_subject_words
         self.num_body_words = num_body_words
 
-        self.cost = Multicost([GeneralizedCost(CrossEntropyMulti()), GeneralizedCost(SumSquared())])
+        self.cost = Multicost([GeneralizedCost(SumSquared()), GeneralizedCost(CrossEntropyMulti())])
 
         self.neuralnet.initialize(self.zero_tensors, cost=self.cost)
 
@@ -178,10 +164,7 @@ class EmailClassifier(object):
             else:
                 linear_input = [0.0, 0.0, 0.0, 1.0 if 'fw:' in subject else 0.0]
 
-            linear = self.be.array(linear_input)
-            recurrent = self.be.array(recurrent_input).transpose()
-
-            nn_inputs.append(EmailClassifier.NeuralEmailRepresentation(recurrent, linear))
+            nn_inputs.append([self.be.array(recurrent_input).transpose(), self.be.array(linear_input)])
         return nn_inputs
 
     def classify(self, emails, receiver_address=None, inference=False):
