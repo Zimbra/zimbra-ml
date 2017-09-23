@@ -13,13 +13,12 @@ from time import time
 from neon.util.argparser import NeonArgparser, extract_valid_args
 from neon.backends import gen_backend
 from neon.optimizers import Adam
-from neon.callbacks import Callbacks
+from neon.callbacks.callbacks import Callbacks, TrainMulticostCallback, MetricCallback
 from neon.transforms.cost import MultiMetric, Misclassification, LogLoss
 from zmlcore.smartfolders.classifier import EmailClassifier
+from zmlcore.smartfolders.traincallbacks import TrainingProgress
 from zmlcore.data.dataiterator import TrainingIterator
 import os, email, mailbox
-
-receiver_email = 'michaeltoutonghi@gmail.com'
 
 # random percentage to holdout for validation when training
 holdout_pct = 0.1
@@ -42,6 +41,8 @@ if __name__ == '__main__':
                         'has \"social\" in its name and will be used for training the \"social\" class), ' +
                         'or it should be a path to a training csv file with columns: ' +
                         '\"id, email, overlapping_classes, exclusive_classes\" where each class has its own column.')
+    p.add_argument('--receiver_email', type=str, required=False, default='yourname@yourdomain.com',
+                   help='An e-mail for training data to consider recipient')
     p.add_argument('--data_path', type=str, required=False, default='./data/mailfolders/', # default='./data/emails.csv',
                    help='Path to either csv file of emails with \"id, email, [overlapping,], [exclusive,]\" columns ' +
                         'or a directory with maildir format mailboxes. If it is a directory, folders with the ' +
@@ -170,22 +171,24 @@ if __name__ == '__main__':
         valid_df = emails.sample(frac=holdout_pct)
         train_df = emails.drop(valid_df.index).sample(frac=1)
 
+        ol_len = len(overlapping_classes)
+
         valid = TrainingIterator(classifier.emails_to_nn_representation(list(valid_df['message'].values),
-                                                                        receiver_address=receiver_email),
-                                 [be.array(a) for a in valid_df.loc[:, overlapping_classes + exclusive_classes].values])
+                                                                        receiver_address=options.receiver_email),
+                                 [[be.array(a[:ol_len]),
+                                   be.array(a[ol_len:])]
+                                  for a in valid_df.loc[:, overlapping_classes + exclusive_classes].values])
         train = TrainingIterator(classifier.emails_to_nn_representation(list(train_df['message'].values),
-                                                                        receiver_address=receiver_email),
-                                 [be.array(a) for a in train_df.loc[:, overlapping_classes + exclusive_classes].values])
+                                                                        receiver_address=options.receiver_email),
+                                 [[be.array(a[:ol_len]),
+                                   be.array(a[ol_len:])]
+                                  for a in train_df.loc[:, overlapping_classes + exclusive_classes].values])
 
         callbacks = Callbacks(classifier.neuralnet, **options.callback_args)
+        callbacks.add_callback(TrainingProgress(valid))
         print('Training neural networks on {} samples for {} epochs'.format(len(train_df), options.epochs))
-        classifier.fit(train, optimizer, options.epochs, callbacks)
-
-        # now evaluate
-        print('{} epochs complete, evaluating exclusive classes with misclassification metric')
         classifier.neuralnet.eval(valid, MultiMetric(Misclassification(), 1))
-        print('evaluating overlapping classification with logloss metric')
-        classifier.neuralnet.eval(valid, MultiMetric(LogLoss(), 0))
+        classifier.fit(train, optimizer, options.epochs, callbacks)
     else:
         # if we are to classify, then we need to create dataframe with the classes and save it to our results path
         df = emails

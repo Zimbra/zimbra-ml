@@ -44,6 +44,6 @@ class TrainingIterator(NervanaDataIterator):
     def shuffle(self):
         a = np.arange(len(self.inputs))
         np.random.shuffle(a)
-        self.inputs[:] = self.be.take(self.inputs, a, axis=0)
+        self.inputs = [self.inputs[i] for i in a]
         if not self.targets is None:
-            self.targets[:] = self.be.take(self.targets, a, axis=0)
+            self.targets = [self.targets[i] for i in a]

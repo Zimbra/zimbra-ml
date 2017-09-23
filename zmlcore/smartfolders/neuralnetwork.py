@@ -10,7 +10,7 @@ from neon.models import Model
 from neon.layers import MergeMultistream, LSTM, Affine, RecurrentSum, Tree, BranchNode, SkipNode
 from neon.initializers import GlorotUniform
 from neon.optimizers import Adam
-from neon.transforms import Softmax, Rectlin, Logistic
+from neon.transforms import Softmax, Rectlinclip, Explin, Logistic
 
 
 class ClassifierNetwork(Model):
@@ -26,7 +26,7 @@ class ClassifierNetwork(Model):
             self.exclusive_classes = exclusive_classes
 
         init = GlorotUniform()
-        activation = Rectlin(slope=1.0E-6)
+        activation = Rectlinclip(slope=1.0E-6)
         output_branch = BranchNode(name='overlapping_exclusive')
         layers = [
             MergeMultistream([
@@ -39,3 +39,14 @@ class ClassifierNetwork(Model):
         ]
         super(ClassifierNetwork, self).__init__(layers, optimizer=optimizer)
 
+    def _epoch_fit(self, dataset, callbacks):
+        """
+        Just insert ourselves to shuffle the dataset each epoch
+        :param dataset:
+        :param callbacks:
+        :return:
+        """
+        if hasattr(dataset, 'shuffle'):
+            dataset.shuffle()
+
+        return super(ClassifierNetwork, self)._epoch_fit(dataset, callbacks)

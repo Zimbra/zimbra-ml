@@ -180,6 +180,4 @@ class EmailClassifier(object):
         if isinstance(emails[0], email.message.Message):
             emails = self.emails_to_nn_representation(emails, receiver_address=receiver_address)
 
-        assert (isinstance(emails[0], EmailClassifier.NeuralEmailRepresentation))
-
         return [[o.get(), x.get()] for o, x in [self.neuralnet.fprop(b.nn_input, inference=inference) for b in emails]]
