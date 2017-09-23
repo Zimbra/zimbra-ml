@@ -13,8 +13,9 @@ from time import time
 from neon.util.argparser import NeonArgparser, extract_valid_args
 from neon.backends import gen_backend
 from neon.optimizers import Adam
-from neon.callbacks.callbacks import Callbacks, TrainMulticostCallback, MetricCallback
-from neon.transforms.cost import MultiMetric, Misclassification, LogLoss
+from neon.callbacks.callbacks import Callbacks, TrainMulticostCallback
+from neon.transforms.cost import Misclassification
+from zmlcore.neonfixes.multimetric import MultiMetric
 from zmlcore.smartfolders.classifier import EmailClassifier
 from zmlcore.smartfolders.traincallbacks import TrainingProgress
 from zmlcore.data.dataiterator import TrainingIterator
@@ -53,7 +54,7 @@ if __name__ == '__main__':
                    'maildir format, along with ground truth columns based on finding the classes in the folder names')
     p.add_argument('--results_path', type=str, required=False, default='./data/results.csv',
                    help='The path where a CSV file with email keys and classifications will be written')
-    p.add_argument('--learning_rate', type=float, required=False, default=0.001,
+    p.add_argument('--learning_rate', type=float, required=False, default=0.0007,
                    help='Set learning rate for neural networks')
     options = p.parse_args(gen_be=False)
 
@@ -186,8 +187,10 @@ if __name__ == '__main__':
 
         callbacks = Callbacks(classifier.neuralnet, **options.callback_args)
         callbacks.add_callback(TrainingProgress(valid))
+        callbacks.add_callback(TrainMulticostCallback())
         print('Training neural networks on {} samples for {} epochs'.format(len(train_df), options.epochs))
-        classifier.neuralnet.eval(valid, MultiMetric(Misclassification(), 1))
+        print('Current error rate {:.03}%'.format(
+            classifier.neuralnet.eval(valid, MultiMetric(Misclassification(), 1))[0] * 100))
         classifier.fit(train, optimizer, options.epochs, callbacks)
     else:
         # if we are to classify, then we need to create dataframe with the classes and save it to our results path

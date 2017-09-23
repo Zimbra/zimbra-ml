@@ -62,6 +62,10 @@ class EmailClassifier(object):
 
     @property
     def be(self):
+        """
+        return the Nervana backend object
+        :return:
+        """
         return self.neuralnet.be
 
     def load_vocabulary(self, vocab_path):

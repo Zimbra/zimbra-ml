@@ -5,8 +5,8 @@ created: 9/22/2017
 Callbacks for reporting progress during training
 """
 from neon.callbacks.callbacks import Callback
-from neon.transforms.cost import MultiMetric, Misclassification, LogLoss
-
+from neon.transforms.cost import Misclassification, LogLoss
+from ..neonfixes.multimetric import MultiMetric
 
 class TrainingProgress(Callback):
     """
@@ -27,7 +27,8 @@ class TrainingProgress(Callback):
             model (Model): model object
             epoch (int): index of epoch that is ending
         """
-        print('Exclusive class misclassification error = {}%'.format(
-            model.eval(self.valid, metric=self.exclusive_metric).get()[0,0] * 100))
-        print('Overlapping class log loss error = {}'.format(model.eval(self.valid, metric=self.overlapping_metric)))
+        print('Exclusive class misclassification error = {:.03}%'.format(
+            model.eval(self.valid, metric=self.exclusive_metric)[0] * 100))
+        print('Overlapping class log loss error = {:.05}'.format(
+            model.eval(self.valid, metric=self.overlapping_metric)[0]))
 

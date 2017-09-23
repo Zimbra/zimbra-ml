@@ -33,7 +33,7 @@ class ClassifierNetwork(Model):
             [LSTM(300, init, init_inner=init, activation=activation, gate_activation=Logistic()),
              RecurrentSum()],
             [Affine(300, init, activation=activation)]], 'stack'),
-            Affine(100, init, activation=activation),
+            Affine(100, init, activation=Rectlinclip(slope=1.0E-6, xcut=10.0)),
             Tree([[SkipNode(), output_branch, Affine(len(self.overlapping_classes), init, activation=Logistic())],
                   [output_branch, Affine(len(self.exclusive_classes), init, activation=Softmax())]])
         ]
