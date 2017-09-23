@@ -1,9 +1,13 @@
 """
-(C) Copyright 2017 Synacor, Inc.
+Portions (C) Copyright 2017 Synacor, Inc.
 Created: 9/22/2017, Michael Toutonghi
 
 This and other files in this directory are fixes for the Neon library, typically in the form of a subclass, sometimes
 a replacement
+
+Some portions of this file are copyrighted by Intel and used without usage restriction in accordance
+with the Apache 2.0 License, under which Intel Nervana Neon is licensed:
+https://github.com/NervanaSystems/neon/blob/master/LICENSE
 """
 from neon.transforms.cost import Metric
 
