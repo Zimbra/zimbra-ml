@@ -47,3 +47,75 @@ class TrainingIterator(NervanaDataIterator):
         self.inputs = [self.inputs[i] for i in a]
         if not self.targets is None:
             self.targets = [self.targets[i] for i in a]
+
+
+class BatchIterator(NervanaDataIterator):
+    def __init__(self, inputs, targets=None, steps=None, name=None):
+        """
+        This takes two lists with samples separated in the 0 dimension. If for recurrent input, the number
+        of recurrent items is also in the 0 dimension.
+        :param inputs: MUST be a numpy array of inputs separated by each sequence element and batch on axis 0
+        :param targets: MUST be a numpy array of targets separated by each element and batch on axis 0
+        :param steps: list of the number of recurrent steps in each stream of the input (element of input list)
+        :param name:
+        """
+        super(BatchIterator, self).__init__(name=name)
+
+        if steps is None:
+            steps = [1]
+        elif not isinstance(steps, list):
+            steps = [steps]
+
+        if not isinstance(inputs, list):
+            inputs = [inputs]
+
+        if not targets is None and not isinstance(targets, list):
+            targets = [targets]
+
+        self.ndata = int(len(inputs[0]) // steps[0])
+        self.steps = steps
+        self.start = [0 for _ in inputs]
+
+        # transpose inputs and account for recurrence
+        self.inputs = [self.be.array(x).transpose() for x in inputs]
+        self.targets = None if targets is None else [self.be.array(y).transpose() for y in targets]
+
+    def reset(self):
+        self.start = [0 for _ in self.start]
+
+    @property
+    def nbatches(self):
+        return int(-((self.start[0] / self.steps[0]) - self.ndata) // self.be.bsz)
+
+    def __iter__(self):
+        """
+        Returns a new minibatch of data with each call.
+
+        Yields:
+            tuple: The next minibatch which includes both features and labels.
+        """
+        pos = self.start[0] // self.steps[0]
+        while pos + self.be.bsz <= self.ndata:
+            y = None if self.targets is None else [a[:,pos:pos + self.be.bsz] for a in self.targets]
+
+            x = []
+            for a, i in zip(self.inputs, range(len(self.inputs))):
+                inc = self.steps[i] * self.be.bsz
+                x += [a[:,self.start[i]:self.start[i] + inc]]
+                self.start[i] += inc
+
+            yield x if len(x) > 1 else x[0], y if y is None or len(y) > 1 else y[0]
+            pos = self.start[0] // self.steps[0]
+
+        self.reset()
+
+    def shuffle(self):
+        a = np.arange(self.ndata)
+        np.random.shuffle(a)
+        for x, i in zip(self.inputs, range(len(self.inputs))):
+            shuffles = np.array([[v for _ in range(self.steps[i])] for v in a]).flatten()
+            x[:] = self.be.take(x, shuffles, axis=1)
+        if not self.targets is None:
+            for x in self.targets:
+                x[:] = self.be.take(x, a, axis=1)
+

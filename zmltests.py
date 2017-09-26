@@ -72,14 +72,19 @@ if __name__ == '__main__':
     # don't display errors writing to subset copies of DataFrames
     pd.options.mode.chained_assignment = None
 
-    options.batch_size = 1
+    # for now, emails do not support batch mode
+    if not options.sentiment_path:
+        options.batch_size = 1
+
     be = gen_backend(**extract_valid_args(options, gen_backend))
 
     optimizer = Adam(learning_rate=options.learning_rate)
 
     overlapping_classes = options.overlapping_classes.strip(' \"\'').split() if options.sentiment_path is None else None
-    exclusive_classes = options.exclusive_classes.strip(' \"\'').split()
+    exclusive_classes = options.exclusive_classes.strip(' \"\'').split() \
+        if options.sentiment_path is None else ['positive', 'negative']
     classifier = EmailClassifier(options.glove, options.model_file, optimizer=optimizer,
+                                 num_analytics_features=0 if options.sentiment_path else 4,
                                  overlapping_classes=overlapping_classes, exclusive_classes=exclusive_classes)
 
     if options.sentiment_path:
@@ -87,10 +92,11 @@ if __name__ == '__main__':
         sdata = SentimentLoader(classifier, options.sentiment_path)
         callbacks = Callbacks(classifier.neuralnet, **options.callback_args)
         callbacks.add_callback(MisclassificationTest(sdata.test))
-        print('Training neural networks on {} samples for {} epochs'.format(len(sdata.train), options.epochs))
-        print('Current classification error rate {:.03}%'.format(
-            classifier.neuralnet.eval(sdata.test, Misclassification())[0] * 100))
+        print('Training neural networks on {} samples for {} epochs'.format(len(sdata.train.targets[0][0]),
+                                                                            options.epochs))
         classifier.fit(sdata.train, optimizer, options.epochs, callbacks)
+        print('finished sentiment classification test, exiting')
+        exit(0)
 
     # determine if we expect to use a csv file or a maildir as our data source
     if os.path.isfile(options.data_path):

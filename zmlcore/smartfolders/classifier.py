@@ -27,6 +27,7 @@ from neon.layers import Multicost, GeneralizedCost
 from neon.transforms import CrossEntropyMulti, SumSquared
 from neon.optimizers import Adam
 from bs4 import BeautifulSoup
+import re
 
 class EmailClassifier(object):
     def __init__(self, vocab_path, model_path, optimizer=Adam(), overlapping_classes=None, exclusive_classes=None,
@@ -48,22 +49,22 @@ class EmailClassifier(object):
                 print('{}:{} - cannot load model file {}'.format(type(e), e, model_path))
 
         self.zero_tensors = \
-            [self.be.zeros((self.wordvec_dimensions, num_subject_words + num_body_words))]
+            [self.be.iobuf((self.wordvec_dimensions, num_subject_words + num_body_words))]
 
         # don't add an analytics tensor if we're content only
         if num_analytics_features > 0:
-            self.zero_tensors += [self.be.zeros((num_analytics_features, 1))]
+            self.zero_tensors += [self.be.iobuf((num_analytics_features, 1))]
 
         self.num_subject_words = num_subject_words
         self.num_body_words = num_body_words
 
         # only add an overlapping classifier if needed
-        if not overlapping_classes is None:
-            self.cost = Multicost([GeneralizedCost(SumSquared()), GeneralizedCost(CrossEntropyMulti())])
-        else:
+        if overlapping_classes is None:
             self.cost = GeneralizedCost(CrossEntropyMulti())
-
-        self.neuralnet.initialize(self.zero_tensors, cost=self.cost)
+            self.neuralnet.initialize(self.zero_tensors[0], cost=self.cost)
+        else:
+            self.cost = Multicost([GeneralizedCost(SumSquared()), GeneralizedCost(CrossEntropyMulti())])
+            self.neuralnet.initialize(self.zero_tensors, cost=self.cost)
 
     def fit(self, dataset, optimizer, num_epochs, callbacks):
         self.neuralnet.fit(dataset, self.cost, optimizer, num_epochs, callbacks)
@@ -130,12 +131,12 @@ class EmailClassifier(object):
         :param text:
         :return:
         """
-        text_w = [s.lower() for s in
-                  text.split(maxsplit=self.num_body_words)[:self.num_body_words]]
+        num_words = self.num_body_words + self.num_subject_words
+        text_w = [s.group(0).lower() for s, i in zip(re.finditer(r"\w+|[^\w\s]", text), range(num_words))]
+                  # re.split('\s|\?|\!|(?<!\d)[,.]|[,.](?!\d)', text, maxsplit=num_words)[:num_words] if len(s) > 0]
         zeros = self.zero_tensors[0][:, 0].get().transpose()[0]
-        recurrent_input = [self.vocab.get(w, zeros) for w in text_w] + \
-                          [zeros for _ in range((self.num_body_words + self.num_subject_words) - len(text_w))]
-        return self.be.array(recurrent_input).transpose()
+        recurrent_input = [self.vocab.get(w, zeros) for w in text_w] + [zeros for _ in range(num_words - len(text_w))]
+        return recurrent_input
 
     def emails_to_nn_representation(self, emails, receiver_address=None):
         """
@@ -173,9 +174,9 @@ class EmailClassifier(object):
             #   4. is this a forward?
             subject = e[subject_key]
             subject_w = [s.lower() for s in
-                         subject.split(maxsplit=self.num_subject_words)[:self.num_subject_words]]
+                         subject.split(' .!?,', maxsplit=self.num_subject_words)[:self.num_subject_words]]
             body_w = [s.lower() for s in
-                         e[text_key].split(maxsplit=self.num_body_words)[:self.num_body_words]]
+                         e[text_key].split(' .!?,', maxsplit=self.num_body_words)[:self.num_body_words]]
             zeros = self.zero_tensors[0][:,0].get().transpose()[0]
             recurrent_input = [self.vocab.get(w, zeros) for w in subject_w] + \
                               [zeros for _ in range(self.num_subject_words - len(subject_w))] + \
