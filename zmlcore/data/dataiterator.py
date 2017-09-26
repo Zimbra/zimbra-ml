@@ -119,3 +119,20 @@ class BatchIterator(NervanaDataIterator):
             for x in self.targets:
                 x[:] = self.be.take(x, a, axis=1)
 
+    def test_shuffle(self):
+        """
+        this stores markers at the beginning (and end if recurrent) of each section of each input and target
+        it then shuffles and verifies that all markers still match
+        :return:
+        """
+        a = np.arange(self.ndata)
+        for i in a:
+            for x, s in zip(self.inputs, self.steps):
+                x[:, i * s:(i * s) + s] = float(i)
+            for x in self.targets:
+                x[:,i] = float(i)
+        for i in a:
+            for x, s in zip(self.inputs, self.steps):
+                z_if_ok = sum([0 if (self.targets[0][i, 0].get()[0, 0] == y.get()[0, 0] for y in [x[i * s:(i * s) + s]])
+                              else 1])
+                assert z_if_ok == 0

@@ -38,8 +38,7 @@ class ClassifierNetwork(Model):
                 'stack')
         else:
             # content only
-            input_layers = [LSTM(300, init, init_inner=init, activation=activation, gate_activation=gate),
-                            LSTM(300, init, init_inner=init, activation=activation, gate_activation=gate),
+            input_layers = [LSTM(600, init, init_inner=init, activation=activation, gate_activation=gate),
                             RecurrentSum()]
 
         if self.overlapping_classes is None:

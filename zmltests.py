@@ -44,6 +44,8 @@ if __name__ == '__main__':
                    default='\"important\"',
                    help='The labels of the classes, which can overlap with themselves or an exclusive class. ' +
                         'Should be a quoted, space separated list.')
+    p.add_argument('--shuffle_test', type=bool, required=False, default=False,
+                   help='If true, shuffling of inputs and targets tests will be run')
     p.add_argument('--train', type=bool, required=False, default=False,
                    help='If set to True, the \"--classify\" parameter must either be a maildir with folders that have\n' +
                         'the class names to train present in the names of the folders (ie. \"socialfolder\" ' +
@@ -90,6 +92,13 @@ if __name__ == '__main__':
     if options.sentiment_path:
         # we will supercede the email classification function to test the content classification network only
         sdata = SentimentLoader(classifier, options.sentiment_path)
+        if options.shuffle_test:
+            print('SHUFFLE TEST BEGIN... please wait...')
+            sdata.train.test_shuffle()
+            sdata.test.test_shuffle()
+            print('SHUFFLE TEST PASSED... reloading inputs and targets')
+            sdata = SentimentLoader(classifier, options.sentiment_path)
+
         callbacks = Callbacks(classifier.neuralnet, **options.callback_args)
         callbacks.add_callback(MisclassificationTest(sdata.test))
         print('Training neural networks on {} samples for {} epochs'.format(sdata.train.targets[0].shape[1],
