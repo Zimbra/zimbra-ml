@@ -32,3 +32,18 @@ class TrainingProgress(Callback):
         print('Overlapping class log loss error = {:.05}'.format(
             model.eval(self.valid, metric=self.overlapping_metric)[0]))
 
+
+class MisclassificationTest(Callback):
+    """
+    Callback for checking misclassification
+    """
+    def __init__(self, valid):
+        super(MisclassificationTest, self).__init__(epoch_freq=1)
+        self.valid = valid
+
+    def on_epoch_end(self, callback_data, model, epoch):
+        """
+        Called when an epoch is about to end. this runs a validation set through the model and prints results.
+        """
+        print('Misclassification error = %.1f%%' % (model.eval(self.valid, metric=Misclassification()) * 100))
+

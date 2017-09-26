@@ -17,8 +17,9 @@ from neon.callbacks.callbacks import Callbacks, TrainMulticostCallback
 from neon.transforms.cost import Misclassification
 from zmlcore.neonfixes.multimetric import MultiMetric
 from zmlcore.smartfolders.classifier import EmailClassifier
-from zmlcore.smartfolders.traincallbacks import TrainingProgress
+from zmlcore.smartfolders.traincallbacks import TrainingProgress, MisclassificationTest
 from zmlcore.data.dataiterator import TrainingIterator
+from zmlcore.data.sentiment_loader import SentimentLoader
 import os, email, mailbox
 
 # random percentage to holdout for validation when training
@@ -32,6 +33,13 @@ if __name__ == '__main__':
                    default='\"finance promos social forums updates\"',
                    help='The labels of the exclusive classes to either train on or classify. ' +
                         'Should be a quoted, space separated list.')
+    p.add_argument('--sentiment_path', type=str, required=False, default=None,
+                   help='This overrides the email classification function altogether to benchmark the content ' +
+                        'classification network only. The parameter is a path to the root directory of ' +
+                        'a set of text documents in the same format as the files released by Stanford University ' +
+                        'for this paper: https://cs224d.stanford.edu/reports/PouransariHadi.pdf. ' +
+                        'If this is specified, the content classification network will be used on the '
+                        'database provided to classify into neg and pos results.')
     p.add_argument('--overlapping_classes', type=str, required=False,
                    default='\"important\"',
                    help='The labels of the classes, which can overlap with themselves or an exclusive class. ' +
@@ -69,10 +77,20 @@ if __name__ == '__main__':
 
     optimizer = Adam(learning_rate=options.learning_rate)
 
-    overlapping_classes = options.overlapping_classes.strip(' \"\'').split()
+    overlapping_classes = options.overlapping_classes.strip(' \"\'').split() if options.sentiment_path is None else None
     exclusive_classes = options.exclusive_classes.strip(' \"\'').split()
     classifier = EmailClassifier(options.glove, options.model_file, optimizer=optimizer,
                                  overlapping_classes=overlapping_classes, exclusive_classes=exclusive_classes)
+
+    if options.sentiment_path:
+        # we will supercede the email classification function to test the content classification network only
+        sdata = SentimentLoader(classifier, options.sentiment_path)
+        callbacks = Callbacks(classifier.neuralnet, **options.callback_args)
+        callbacks.add_callback(MisclassificationTest(sdata.test))
+        print('Training neural networks on {} samples for {} epochs'.format(len(sdata.train), options.epochs))
+        print('Current classification error rate {:.03}%'.format(
+            classifier.neuralnet.eval(sdata.test, Misclassification())[0] * 100))
+        classifier.fit(sdata.train, optimizer, options.epochs, callbacks)
 
     # determine if we expect to use a csv file or a maildir as our data source
     if os.path.isfile(options.data_path):
