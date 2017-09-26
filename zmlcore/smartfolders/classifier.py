@@ -47,13 +47,21 @@ class EmailClassifier(object):
             except Exception as e:
                 print('{}:{} - cannot load model file {}'.format(type(e), e, model_path))
 
-        self.zero_tensors = [self.be.zeros((self.wordvec_dimensions, num_subject_words + num_body_words)),
-                             self.be.zeros((num_analytics_features, 1))]
+        self.zero_tensors = \
+            [self.be.zeros((self.wordvec_dimensions, num_subject_words + num_body_words))]
+
+        # don't add an analytics tensor if we're content only
+        if num_analytics_features > 0:
+            self.zero_tensors += [self.be.zeros((num_analytics_features, 1))]
 
         self.num_subject_words = num_subject_words
         self.num_body_words = num_body_words
 
-        self.cost = Multicost([GeneralizedCost(SumSquared()), GeneralizedCost(CrossEntropyMulti())])
+        # only add an overlapping classifier if needed
+        if not overlapping_classes is None:
+            self.cost = Multicost([GeneralizedCost(SumSquared()), GeneralizedCost(CrossEntropyMulti())])
+        else:
+            self.cost = GeneralizedCost(CrossEntropyMulti())
 
         self.neuralnet.initialize(self.zero_tensors, cost=self.cost)
 
@@ -114,6 +122,21 @@ class EmailClassifier(object):
         else:
             return ''
 
+    def text_to_nn_representation(self, text):
+        """
+        this simply converts text to input for the neural network. it only converts
+        the first words up to the total number of subject and body words together.
+        this is currently used for testing classification on non-email tests.
+        :param text:
+        :return:
+        """
+        text_w = [s.lower() for s in
+                  text.split(maxsplit=self.num_body_words)[:self.num_body_words]]
+        zeros = self.zero_tensors[0][:, 0].get().transpose()[0]
+        recurrent_input = [self.vocab.get(w, zeros) for w in text_w] + \
+                          [zeros for _ in range((self.num_body_words + self.num_subject_words) - len(text_w))]
+        return self.be.array(recurrent_input).transpose()
+
     def emails_to_nn_representation(self, emails, receiver_address=None):
         """
         this converts a list of emails into a list of two vector tuples, each tuple has one element that
@@ -152,7 +175,6 @@ class EmailClassifier(object):
             subject_w = [s.lower() for s in
                          subject.split(maxsplit=self.num_subject_words)[:self.num_subject_words]]
             body_w = [s.lower() for s in
-                         # e[text_key]['body'].split(maxsplit=self.num_body_words)[:self.num_body_words]]
                          e[text_key].split(maxsplit=self.num_body_words)[:self.num_body_words]]
             zeros = self.zero_tensors[0][:,0].get().transpose()[0]
             recurrent_input = [self.vocab.get(w, zeros) for w in subject_w] + \
@@ -160,15 +182,17 @@ class EmailClassifier(object):
                               [self.vocab.get(w, zeros) for w in body_w] + \
                               [zeros for _ in range(self.num_body_words - len(body_w))]
 
-            if receiver_address:
-                linear_input = [1.0 if (len(e[to_key]) == 1 and receiver_address == e[to_key][0]) else 0.0,
-                                1.0 if ('re:' in subject and receiver_address in to_key) else 0.0,
-                                1.0 if receiver_address in to_key else 0.0,
-                                1.0 if ('fw:' in subject or 'fwd:' in subject) else 0.0]
-            else:
-                linear_input = [0.0, 0.0, 0.0, 1.0 if 'fw:' in subject else 0.0]
+            if not self.neuralnet.overlapping_classes is None:
+                if receiver_address:
+                    linear_input = [1.0 if (len(e[to_key]) == 1 and receiver_address == e[to_key][0]) else 0.0,
+                                    1.0 if ('re:' in subject and receiver_address in to_key) else 0.0,
+                                    1.0 if receiver_address in to_key else 0.0,
+                                    1.0 if ('fw:' in subject or 'fwd:' in subject) else 0.0]
+                else:
+                    linear_input = [0.0, 0.0, 0.0, 1.0 if 'fw:' in subject else 0.0]
 
-            nn_inputs.append([self.be.array(recurrent_input).transpose(), self.be.array(linear_input)])
+                nn_inputs.append([self.be.array(recurrent_input).transpose(), self.be.array(linear_input)])
+
         return nn_inputs
 
     def classify(self, emails, receiver_address=None, inference=False):
@@ -184,4 +208,7 @@ class EmailClassifier(object):
         if isinstance(emails[0], email.message.Message):
             emails = self.emails_to_nn_representation(emails, receiver_address=receiver_address)
 
-        return [[o.get(), x.get()] for o, x in [self.neuralnet.fprop(b.nn_input, inference=inference) for b in emails]]
+        return [[o.get() for o in x] for x in [[self.neuralnet.fprop(b.nn_input, inference=inference)]
+                                               if self.neuralnet.overlapping_classes is None
+                                               else self.neuralnet.fprop(b.nn_input, inference=inference)
+                                               for b in emails]]
