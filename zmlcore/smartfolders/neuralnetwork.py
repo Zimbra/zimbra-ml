@@ -10,7 +10,7 @@ from neon.models import Model
 from neon.layers import MergeMultistream, LSTM, Affine, RecurrentSum, Tree, BranchNode, SkipNode
 from neon.initializers import GlorotUniform
 from neon.optimizers import Adam
-from neon.transforms import Softmax, Rectlinclip, Explin, Logistic
+from neon.transforms import Softmax, Rectlinclip, Explin, Logistic, Tanh
 
 
 class ClassifierNetwork(Model):
@@ -26,17 +26,20 @@ class ClassifierNetwork(Model):
 
         init = GlorotUniform()
         activation = Rectlinclip(slope=1.0E-6)
+        gate = Logistic()
 
         if analytics_input:
             # support analytics + content
             input_layers = MergeMultistream([
-                [LSTM(300, init, init_inner=init, activation=activation, gate_activation=Logistic()),
+                # [LSTM(300, init, init_inner=init, activation=activation, gate_activation=gate),
+                [LSTM(300, init, init_inner=init, activation=activation, gate_activation=gate),
                  RecurrentSum()],
                 [Affine(300, init, activation=activation)]],
                 'stack')
         else:
             # content only
-            input_layers = [LSTM(300, init, init_inner=init, activation=activation, gate_activation=Logistic()),
+            input_layers = [LSTM(300, init, init_inner=init, activation=activation, gate_activation=gate),
+                            LSTM(300, init, init_inner=init, activation=activation, gate_activation=gate),
                             RecurrentSum()]
 
         if self.overlapping_classes is None:
@@ -51,7 +54,7 @@ class ClassifierNetwork(Model):
         layers = [input_layers,
                   # this is where both inputs meet, and where we may want to add depth or
                   # additional functionality
-                  Affine(100, init, activation=Rectlinclip(slope=1.0E-6, xcut=10.0)),
+                  Affine(300, init, activation=Rectlinclip(slope=1E-06, xcut=10.0)),
                   output_layers]
         super(ClassifierNetwork, self).__init__(layers, optimizer=optimizer)
 

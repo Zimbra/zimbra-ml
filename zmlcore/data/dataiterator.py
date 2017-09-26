@@ -113,7 +113,7 @@ class BatchIterator(NervanaDataIterator):
         a = np.arange(self.ndata)
         np.random.shuffle(a)
         for x, i in zip(self.inputs, range(len(self.inputs))):
-            shuffles = np.array([[v for _ in range(self.steps[i])] for v in a]).flatten()
+            shuffles = np.array([[v * self.steps[i] + j for j in range(self.steps[i])] for v in a]).flatten()
             x[:] = self.be.take(x, shuffles, axis=1)
         if not self.targets is None:
             for x in self.targets:

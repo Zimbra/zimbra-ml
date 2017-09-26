@@ -92,7 +92,7 @@ if __name__ == '__main__':
         sdata = SentimentLoader(classifier, options.sentiment_path)
         callbacks = Callbacks(classifier.neuralnet, **options.callback_args)
         callbacks.add_callback(MisclassificationTest(sdata.test))
-        print('Training neural networks on {} samples for {} epochs'.format(len(sdata.train.targets[0][0]),
+        print('Training neural networks on {} samples for {} epochs'.format(sdata.train.targets[0].shape[1],
                                                                             options.epochs))
         classifier.fit(sdata.train, optimizer, options.epochs, callbacks)
         print('finished sentiment classification test, exiting')
