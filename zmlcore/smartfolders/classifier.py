@@ -31,16 +31,20 @@ import re
 
 class EmailClassifier(object):
     def __init__(self, vocab_path, model_path, optimizer=Adam(), overlapping_classes=None, exclusive_classes=None,
-                 num_analytics_features=4, num_subject_words=8, num_body_words=22):
+                 num_analytics_features=4, num_subject_words=8, num_body_words=22, recurrent=True):
         """
         loads the vocabulary and sets up LSTM networks for classification.
         """
-        self.neuralnet = ClassifierNetwork(overlapping_classes=overlapping_classes,
-                                           exclusive_classes=exclusive_classes,
-                                           optimizer=optimizer)
         self.wordvec_dimensions = 0
         self.vocab = self.load_vocabulary(vocab_path)
+        self.recurrent = recurrent
         assert self.wordvec_dimensions > 0
+
+        self.neuralnet = ClassifierNetwork(overlapping_classes=overlapping_classes,
+                                           exclusive_classes=exclusive_classes,
+                                           optimizer=optimizer, recurrent=recurrent,
+                                           analytics_input=False if num_analytics_features == 0 else True,
+                                           width=self.wordvec_dimensions)
 
         if not model_path is None:
             try:
@@ -48,12 +52,14 @@ class EmailClassifier(object):
             except Exception as e:
                 print('{}:{} - cannot load model file {}'.format(type(e), e, model_path))
 
-        self.zero_tensors = \
-            [self.be.iobuf((self.wordvec_dimensions, num_subject_words + num_body_words))]
+        if recurrent:
+            self.zero_tensors = [self.be.zeros((self.wordvec_dimensions, num_subject_words + num_body_words))]
+        else:
+            self.zero_tensors = [self.be.zeros((1, num_subject_words + num_body_words, self.wordvec_dimensions))]
 
         # don't add an analytics tensor if we're content only
         if num_analytics_features > 0:
-            self.zero_tensors += [self.be.iobuf((num_analytics_features, 1))]
+            self.zero_tensors += [self.be.zeros((num_analytics_features, 1))]
 
         self.num_subject_words = num_subject_words
         self.num_body_words = num_body_words
@@ -133,10 +139,18 @@ class EmailClassifier(object):
         """
         num_words = self.num_body_words + self.num_subject_words
         text_w = [s.group(0).lower() for s, i in zip(re.finditer(r"\w+|[^\w\s]", text), range(num_words))]
-                  # re.split('\s|\?|\!|(?<!\d)[,.]|[,.](?!\d)', text, maxsplit=num_words)[:num_words] if len(s) > 0]
-        zeros = self.zero_tensors[0][:, 0].get().transpose()[0]
-        recurrent_input = [self.vocab.get(w, zeros) for w in text_w] + [zeros for _ in range(num_words - len(text_w))]
-        return recurrent_input
+        zt = self.zero_tensors[0]
+        if len(zt.shape) == 2:
+            zeros = zt[0, :].get()[0]
+        elif len(zt.shape) == 3:
+            zeros = zt[:, 0, :].get()[0]
+        elif len(zt.shape) == 4:
+            zeros = zt[:, :, 0, :].get()[0]
+        elif len(zt.shape) == 5:
+            zeros = zt[:, :, :, 0, :].get()[0]
+        else:
+            assert False
+        return [self.vocab.get(w, zeros) for w in text_w] + [zeros for _ in range(num_words - len(text_w))]
 
     def emails_to_nn_representation(self, emails, receiver_address=None):
         """
@@ -177,7 +191,17 @@ class EmailClassifier(object):
                          subject.split(' .!?,', maxsplit=self.num_subject_words)[:self.num_subject_words]]
             body_w = [s.lower() for s in
                          e[text_key].split(' .!?,', maxsplit=self.num_body_words)[:self.num_body_words]]
-            zeros = self.zero_tensors[0][:,0].get().transpose()[0]
+
+            zt = self.zero_tensors[0]
+            if len(zt.shape) == 2:
+                zeros = zt[:, :].get()[:, 0]
+            elif len(zt.shape) == 3:
+                zeros = zt[:, :, 0].get()[0]
+            elif len(zt.shape) == 4:
+                zeros = zt[:, :, :, 0].get()[0]
+            else:
+                assert False
+
             recurrent_input = [self.vocab.get(w, zeros) for w in subject_w] + \
                               [zeros for _ in range(self.num_subject_words - len(subject_w))] + \
                               [self.vocab.get(w, zeros) for w in body_w] + \

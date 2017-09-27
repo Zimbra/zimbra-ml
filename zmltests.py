@@ -46,6 +46,8 @@ if __name__ == '__main__':
                         'Should be a quoted, space separated list.')
     p.add_argument('--shuffle_test', type=bool, required=False, default=False,
                    help='If true, shuffling of inputs and targets tests will be run')
+    p.add_argument('--conv_net', type=bool, required=False, default=False,
+                   help='If true, uses convolutional instead of LSTM')
     p.add_argument('--train', type=bool, required=False, default=False,
                    help='If set to True, the \"--classify\" parameter must either be a maildir with folders that have\n' +
                         'the class names to train present in the names of the folders (ie. \"socialfolder\" ' +
@@ -85,11 +87,13 @@ if __name__ == '__main__':
     overlapping_classes = options.overlapping_classes.strip(' \"\'').split() if options.sentiment_path is None else None
     exclusive_classes = options.exclusive_classes.strip(' \"\'').split() \
         if options.sentiment_path is None else ['positive', 'negative']
-    classifier = EmailClassifier(options.glove, options.model_file, optimizer=optimizer,
-                                 num_analytics_features=0 if options.sentiment_path else 4,
-                                 overlapping_classes=overlapping_classes, exclusive_classes=exclusive_classes)
 
     if options.sentiment_path:
+        classifier = EmailClassifier(options.glove, options.model_file, optimizer=optimizer,
+                                     num_analytics_features=0 if options.sentiment_path else 4,
+                                     overlapping_classes=overlapping_classes, exclusive_classes=exclusive_classes,
+                                     recurrent=options.conv_net)
+
         # we will supercede the email classification function to test the content classification network only
         sdata = SentimentLoader(classifier, options.sentiment_path)
         if options.shuffle_test:
@@ -106,6 +110,11 @@ if __name__ == '__main__':
         classifier.fit(sdata.train, optimizer, options.epochs, callbacks)
         print('finished sentiment classification test, exiting')
         exit(0)
+
+    classifier = EmailClassifier(options.glove, options.model_file, optimizer=optimizer,
+                                 num_analytics_features=0 if options.sentiment_path else 4,
+                                 overlapping_classes=overlapping_classes, exclusive_classes=exclusive_classes,
+                                 recurrent=options.conv_net)
 
     # determine if we expect to use a csv file or a maildir as our data source
     if os.path.isfile(options.data_path):

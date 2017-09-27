@@ -40,9 +40,12 @@ class SentimentLoader(NervanaObject):
                                             train_files_pos,
                                             np.array([1.0, 0.0]))
 
-            train_x = np.array(train_x + x)
+            num_samples = len(train_files_neg) + len(train_files_pos)
+            num_steps = int((len(train_x) + len(x)) / num_samples)
+            train_x = np.array(train_x + x).reshape((num_samples, 1, num_steps, len(x[0])))
             train_t = np.array(train_t + t)
-            self.train = BatchIterator(train_x, train_t, steps=classifier.num_subject_words + classifier.num_body_words)
+            # self.train = BatchIterator(train_x, train_t, steps=classifier.num_subject_words + classifier.num_body_words)
+            self.train = BatchIterator(train_x, train_t)
 
             test_x, test_t = self.load_classification(classifier, test_neg_path,
                                                       test_files_neg,
@@ -50,9 +53,12 @@ class SentimentLoader(NervanaObject):
             x, t = self.load_classification(classifier, test_pos_path,
                                             test_files_pos,
                                             np.array([1.0, 0.0]))
-            test_x = np.array(test_x + x)
+            num_samples = len(test_files_neg) + len(test_files_pos)
+            num_steps = int((len(test_x) + len(x)) / num_samples)
+            test_x = np.array(test_x + x).reshape((num_samples, 1, num_steps, len(x[0])))
             test_t = np.array(test_t + t)
-            self.test = BatchIterator(test_x, test_t, steps=classifier.num_subject_words + classifier.num_body_words)
+            # self.test = BatchIterator(test_x, test_t, steps=classifier.num_subject_words + classifier.num_body_words)
+            self.test = BatchIterator(test_x, test_t)
         else:
             print('Invalid IMDB data directory {}. specified directory should be',
                   'the root level of the IMDB dataset as published by Stanford University.'.format(data_path))
