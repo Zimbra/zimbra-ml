@@ -27,6 +27,7 @@ from neon.layers import Multicost, GeneralizedCost
 from neon.transforms import CrossEntropyMulti, SumSquared
 from neon.optimizers import Adam
 from bs4 import BeautifulSoup
+from collections import deque
 import re
 
 class EmailClassifier(object):
@@ -63,6 +64,7 @@ class EmailClassifier(object):
 
         self.num_subject_words = num_subject_words
         self.num_body_words = num_body_words
+        self.num_words = num_subject_words + num_body_words
 
         # only add an overlapping classifier if needed
         if overlapping_classes is None:
@@ -89,14 +91,16 @@ class EmailClassifier(object):
         :param vocab_path:
         :return:
         """
+        print('loading word vectors from {} ...'.format(vocab_path), end='', flush=True)
         vocab = {}
         with open(vocab_path, 'r') as f:
             tokens = []
             for line in f:
                 if len(line) > 0:
                     tokens = line.split()
-                    vocab[tokens[0]] = np.array(tokens[1:], dtype=np.float32)
+                    vocab[tokens[0]] = np.array(tokens[1:], dtype=np.float64)
             self.wordvec_dimensions = len(tokens) - 1
+        print('loaded successfully')
         return vocab
 
     def extract_inline_text(self, part):
@@ -120,7 +124,7 @@ class EmailClassifier(object):
             return result
         elif ct == 'text/html':
             try:
-                text = BeautifulSoup(part.get_payload(), 'html.parser').get_text()
+                text = BeautifulSoup(part.get_payload(), 'html.parser').get_text(separator=' ', strip=True)
             except:
                 return ''
             lines=(line.strip() for line in text.splitlines())
@@ -177,7 +181,9 @@ class EmailClassifier(object):
                 if e.is_multipart() else self.extract_inline_text(e)
         } for e in emails]
 
-        nn_inputs = []
+        # we index recurrent inputs for steps, so make it a list
+        rinputs = []
+        linputs = deque()
 
         for e in emails:
             # until we get contact analytics, we will generate the following contact related features from what we
@@ -187,10 +193,10 @@ class EmailClassifier(object):
             #   3. am I on the "to" line?
             #   4. is this a forward?
             subject = e[subject_key]
-            subject_w = [s.lower() for s in
-                         subject.split(' .!?,', maxsplit=self.num_subject_words)[:self.num_subject_words]]
-            body_w = [s.lower() for s in
-                         e[text_key].split(' .!?,', maxsplit=self.num_body_words)[:self.num_body_words]]
+            subject_w = [s.group(0).lower() for s, i in zip(re.finditer(r"\w+|[^\w\s]", subject),
+                                                            range(self.num_subject_words))]
+            body_w = [s.group(0).lower() for s, i in zip(re.finditer(r"\w+|[^\w\s]", e[text_key]),
+                                                            range(self.num_body_words))]
 
             zt = self.zero_tensors[0]
             if len(zt.shape) == 2:
@@ -202,23 +208,30 @@ class EmailClassifier(object):
             else:
                 assert False
 
-            recurrent_input = [self.vocab.get(w, zeros) for w in subject_w] + \
-                              [zeros for _ in range(self.num_subject_words - len(subject_w))] + \
-                              [self.vocab.get(w, zeros) for w in body_w] + \
-                              [zeros for _ in range(self.num_body_words - len(body_w))]
+            rinputs += [self.vocab.get(w, zeros) for w in subject_w] + \
+                       [zeros for _ in range(np.maximum(int(0), self.num_subject_words - len(subject_w)))] + \
+                       [self.vocab.get(w, zeros) for w in body_w] + \
+                       [zeros for _ in range(np.maximum(int(0), self.num_body_words - len(body_w)))]
+
+            """
+            if len(rinputs) < 30 * 20:
+                print('subject={}, word type={}'.format(subject_w, [type(w) for w in subject_w]))
+                print('body={}, word type={}'.format(body_w, [type(w) for w in body_w]))
+                print('len(self.vocab)={}'.format(len(self.vocab)))
+                print('self.vocab[\'and\']={}'.format(self.vocab['and']))
+                print('first word of subject={}, body={}'.format(rinputs[0], rinputs[8]))
+            """
 
             if not self.neuralnet.overlapping_classes is None:
                 if receiver_address:
-                    linear_input = [1.0 if (len(e[to_key]) == 1 and receiver_address == e[to_key][0]) else 0.0,
+                    linputs.append([1.0 if (len(e[to_key]) == 1 and receiver_address == e[to_key][0]) else 0.0,
                                     1.0 if ('re:' in subject and receiver_address in to_key) else 0.0,
                                     1.0 if receiver_address in to_key else 0.0,
-                                    1.0 if ('fw:' in subject or 'fwd:' in subject) else 0.0]
+                                    1.0 if ('fw:' in subject or 'fwd:' in subject) else 0.0])
                 else:
-                    linear_input = [0.0, 0.0, 0.0, 1.0 if 'fw:' in subject else 0.0]
+                    linputs.append([0.0, 0.0, 0.0, 1.0 if 'fw:' in subject else 0.0])
 
-                nn_inputs.append([self.be.array(recurrent_input).transpose(), self.be.array(linear_input)])
-
-        return nn_inputs
+        return [np.array(rinputs), np.array(linputs)]
 
     def classify(self, emails, receiver_address=None, inference=False):
         """

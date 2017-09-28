@@ -59,15 +59,15 @@ class BatchIterator(NervanaDataIterator):
         1 - channels
         2 - width
         3 - height
-        :param inputs: MUST be a numpy array of inputs separated by each sequence element and batch on axis 0
-        :param targets: MUST be a numpy array of targets separated by each element and batch on axis 0
+        :param inputs: MUST be a list of numpy arrays of inputs separated by each sequence element and batches on axis 0
+        :param targets: MUST be a list of numpy arrays of targets separated by each element and batch on axis 0
         :param steps: list of the number of recurrent steps in each stream of the input (element of input list)
         :param name:
         """
         super(BatchIterator, self).__init__(name=name)
 
         if steps is None:
-            steps = [1]
+            steps = [1 for _ in inputs]
         elif not isinstance(steps, list):
             steps = [steps]
 

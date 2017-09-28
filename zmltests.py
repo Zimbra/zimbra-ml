@@ -18,7 +18,7 @@ from neon.transforms.cost import Misclassification
 from zmlcore.neonfixes.multimetric import MultiMetric
 from zmlcore.smartfolders.classifier import EmailClassifier
 from zmlcore.smartfolders.traincallbacks import TrainingProgress, MisclassificationTest
-from zmlcore.data.dataiterator import TrainingIterator
+from zmlcore.data.dataiterator import TrainingIterator, BatchIterator
 from zmlcore.data.sentiment_loader import SentimentLoader
 import os, email, mailbox
 
@@ -70,15 +70,12 @@ if __name__ == '__main__':
                    help='Set learning rate for neural networks')
     options = p.parse_args(gen_be=False)
 
-    random_seed = int(time())
-    np.random.seed(random_seed)
+    if options.rng_seed:
+        options.rng_seed = int(time())
+    np.random.seed(options.rng_seed)
 
     # don't display errors writing to subset copies of DataFrames
     pd.options.mode.chained_assignment = None
-
-    # for now, emails do not support batch mode
-    if not options.sentiment_path:
-        options.batch_size = 1
 
     be = gen_backend(**extract_valid_args(options, gen_backend))
 
@@ -216,16 +213,39 @@ if __name__ == '__main__':
 
         ol_len = len(overlapping_classes)
 
-        valid = TrainingIterator(classifier.emails_to_nn_representation(list(valid_df['message'].values),
-                                                                        receiver_address=options.receiver_email),
-                                 [[be.array(a[:ol_len]),
-                                   be.array(a[ol_len:])]
-                                  for a in valid_df.loc[:, overlapping_classes + exclusive_classes].values])
-        train = TrainingIterator(classifier.emails_to_nn_representation(list(train_df['message'].values),
-                                                                        receiver_address=options.receiver_email),
-                                 [[be.array(a[:ol_len]),
-                                   be.array(a[ol_len:])]
-                                  for a in train_df.loc[:, overlapping_classes + exclusive_classes].values])
+        valid_emails = classifier.emails_to_nn_representation(list(valid_df['message'].values),
+                                                              receiver_address=options.receiver_email)
+        overlapping_targets = valid_df.loc[:, overlapping_classes].values
+        exclusive_targets = valid_df.loc[:, exclusive_classes].values
+
+        if options.conv_net:
+            valid_emails[0] = valid_emails[0].reshape((len(exclusive_targets), 1, classifier.num_words,
+                                                    len(valid_emails[0][0])))
+            steps = [1, 1]
+        else:
+            valid_emails[0] = valid_emails[0].reshape((len(exclusive_targets), classifier.num_words,
+                                                    len(valid_emails[0][0])))
+            steps = [30, 1]
+
+        valid = BatchIterator(valid_emails,
+                              targets=[overlapping_targets, exclusive_targets],
+                              steps=steps)
+
+        train_emails = classifier.emails_to_nn_representation(list(train_df['message'].values),
+                                                              receiver_address=options.receiver_email)
+        overlapping_targets = train_df.loc[:, overlapping_classes].values
+        exclusive_targets = train_df.loc[:, exclusive_classes].values
+
+        if options.conv_net:
+            train_emails[0] = train_emails[0].reshape((len(exclusive_targets), 1, classifier.num_words,
+                                                       len(train_emails[0][0])))
+        else:
+            train_emails[0] = train_emails[0].reshape((len(exclusive_targets), classifier.num_words,
+                                                       len(train_emails[0][0])))
+
+        train = BatchIterator(train_emails,
+                              targets=[overlapping_targets, exclusive_targets],
+                              steps=steps)
 
         callbacks = Callbacks(classifier.neuralnet, **options.callback_args)
         callbacks.add_callback(TrainingProgress(valid))

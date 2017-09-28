@@ -10,7 +10,7 @@ from neon.models import Model
 from neon.layers import MergeMultistream, LSTM, Affine, RecurrentSum, Tree, BranchNode, SkipNode, Conv, Pooling
 from neon.initializers import GlorotUniform, Kaiming
 from neon.optimizers import Adam
-from neon.transforms import Softmax, Logistic, Rectlin
+from neon.transforms import Softmax, Logistic, Rectlin, Rectlinclip, Explin, Tanh
 
 
 class ClassifierNetwork(Model):
@@ -29,7 +29,7 @@ class ClassifierNetwork(Model):
 
         init = GlorotUniform()
         activation = Rectlin(slope=1E-05)
-        gate = Logistic()
+        gate = Tanh()
 
         input_layers = self.input_layers(analytics_input, init, activation, gate)
 
@@ -39,13 +39,13 @@ class ClassifierNetwork(Model):
             output_branch = BranchNode(name='overlapping_exclusive')
             output_layers = Tree([[SkipNode(),
                                    output_branch,
-                                   Affine(len(self.overlapping_classes), init, activation=activation)],
+                                   Affine(len(self.overlapping_classes), init, activation=Tanh())],
                                   [output_branch,
                                    Affine(len(self.exclusive_classes), init, activation=Softmax())]])
         layers = [input_layers,
                   # this is where inputs meet, and where we may want to add depth or
                   # additional functionality
-                  Affine(300, init, activation=activation),
+                  Affine(20, init, activation=Explin()),
                   output_layers]
         super(ClassifierNetwork, self).__init__(layers, optimizer=optimizer)
 
@@ -73,7 +73,7 @@ class ClassifierNetwork(Model):
                     # [LSTM(300, init, init_inner=init, activation=activation, gate_activation=gate),
                     [LSTM(300, init, init_inner=init, activation=activation, gate_activation=gate),
                      RecurrentSum()],
-                    [Affine(300, init, activation=activation)]],
+                    [Affine(30, init, activation=activation)]],
                     'stack')
             else:
                 # content only
@@ -86,29 +86,31 @@ class ClassifierNetwork(Model):
                     [
                         Conv((1, 1, 2), padding=0, init=Kaiming(), activation=activation),
                         Conv((3, 1, 4), padding=0, init=Kaiming(), activation=activation),
-                        Conv((5, 1, 8), padding=0, init=Kaiming(), activation=activation),
-                        Conv((3, 1, 16), strides={'str_h': 2, 'str_w': 1}, padding=0, init=Kaiming(),
+                        Conv((5, 1, 6), padding=0, init=Kaiming(), activation=activation),
+                        Conv((3, 1, 12), strides={'str_h': 2, 'str_w': 1}, padding=0, init=Kaiming(),
                              activation=activation),
-                        Conv((5, 1, 16), padding=0, init=Kaiming(), activation=activation),
-                        Conv((3, 1, 32), strides={'str_h': 2, 'str_w': 1}, padding=0, init=Kaiming(),
+                        Conv((5, 1, 18), padding=0, init=Kaiming(), activation=activation),
+                        Conv((3, 3, 36), strides={'str_h': 2, 'str_w': 1}, padding=1, init=Kaiming(),
                              activation=activation),
-                        Conv((3, 1, 64), strides={'str_h': 1, 'str_w': 2}, padding=0, init=Kaiming(),
-                             activation=activation),
+                        Conv((3, 2, 54), padding=1, init=Kaiming(), activation=activation),
+                        Conv((1, 3, 108), strides={'str_h': 1, 'str_w': 2}, padding=1, init=Kaiming(),
+                             activation=Logistic()),
                     ],
-                    [Affine(300, init, activation=activation)]],
+                    [Affine(20, init, activation=Logistic())]],
                     'stack')
             else:
                 # content only
                 input_layers = [
                     Conv((1, 1, 2), padding=0, init=Kaiming(), activation=activation),
                     Conv((3, 1, 4), padding=0, init=Kaiming(), activation=activation),
-                    Conv((5, 1, 8), padding=0, init=Kaiming(), activation=activation),
-                    Conv((3, 1, 16), strides={'str_h': 2, 'str_w':1}, padding=0, init=Kaiming(), activation=activation),
-                    Conv((5, 1, 24), padding=0, init=Kaiming(), activation=activation),
-                    Conv((3, 1, 32), strides={'str_h': 2, 'str_w':1}, padding=0, init=Kaiming(), activation=activation),
-                    Conv((3, 3, 64), strides={'str_h': 1, 'str_w': 2}, padding=0, init=Kaiming(), activation=activation),
-                    Conv((1, 3, 96), padding=0, init=Kaiming(), activation=activation),
-                    Conv((1, 3, 128), strides={'str_h': 1, 'str_w': 2}, padding=0, init=Kaiming(), activation=activation),
+                    Conv((5, 1, 6), padding=0, init=Kaiming(), activation=activation),
+                    Conv((3, 1, 12), strides={'str_h': 2, 'str_w':1}, padding=0, init=Kaiming(), activation=activation),
+                    Conv((5, 1, 18), padding=0, init=Kaiming(), activation=activation),
+                    Conv((3, 3, 36), strides={'str_h': 2, 'str_w':1}, padding=1, init=Kaiming(), activation=activation),
+                    Conv((3, 2, 54), padding=1, init=Kaiming(),
+                         activation=activation),
+                    Conv((1, 3, 108), strides={'str_h': 1, 'str_w': 2}, padding=1, init=Kaiming(),
+                         activation=Logistic()),
                 ]
 
         return input_layers

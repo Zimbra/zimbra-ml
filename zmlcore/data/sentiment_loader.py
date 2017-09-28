@@ -44,7 +44,6 @@ class SentimentLoader(NervanaObject):
             num_steps = int((len(train_x) + len(x)) / num_samples)
             train_x = np.array(train_x + x).reshape((num_samples, 1, num_steps, len(x[0])))
             train_t = np.array(train_t + t)
-            # self.train = BatchIterator(train_x, train_t, steps=classifier.num_subject_words + classifier.num_body_words)
             self.train = BatchIterator(train_x, train_t)
 
             test_x, test_t = self.load_classification(classifier, test_neg_path,
