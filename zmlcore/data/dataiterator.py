@@ -82,6 +82,15 @@ class BatchIterator(NervanaDataIterator):
         self.steps = steps
         self.start = [0 for _ in inputs]
 
+        # ensure that we have properly formed shape with at least 2 dimensions, and a numer in the last dimension
+        self.inputs = []
+        for i in range(len(inputs)):
+            x = inputs[i]
+            if not type(x.shape) in [list, tuple]:
+                x = x.reshape((x.shape, 1))
+            elif x[-1] is None:
+                x = x.reshape(tuple([d for d in x.shape[:len(x.shape) - 1] + [1]]))
+
         # transpose inputs, putting axis 0 at the end
         self.inputs = [self.be.array(x.transpose([i for i in range(1, len(x.shape))] + [0])) for x in inputs]
         self.targets = None if targets is None else [self.be.array(y.transpose(
@@ -110,17 +119,13 @@ class BatchIterator(NervanaDataIterator):
             for a, i in zip(self.inputs, range(len(self.inputs))):
                 inc = self.steps[i] * self.be.bsz
                 if len(a.shape) == 2:
-                    x += [a[:,self.start[i]:self.start[i] + inc].reshape(
-                        tuple([n for n in a.shape[:len(a.shape)-1]] + [self.be.bsz]))]
+                    x += [a[:,self.start[i]:self.start[i] + inc]]
                 elif len(a.shape) == 3:
-                    x += [a[:, :, self.start[i]:self.start[i] + inc].reshape(
-                        tuple([n for n in a.shape[:len(a.shape)-1]] + [self.be.bsz]))]
+                    x += [a[:, :, self.start[i]:self.start[i] + inc]]
                 elif len(a.shape) == 4:
-                    x += [a[:, :, :, self.start[i]:self.start[i] + inc].reshape(
-                        tuple([n for n in a.shape[:len(a.shape)-1]] + [self.be.bsz]))]
+                    x += [a[:, :, :, self.start[i]:self.start[i] + inc]]
                 elif len(a.shape) == 5:
-                    x += [a[:, :, :, :, self.start[i]:self.start[i] + inc].reshape(
-                        tuple([n for n in a.shape[:len(a.shape)-1]] + [self.be.bsz]))]
+                    x += [a[:, :, :, :, self.start[i]:self.start[i] + inc]]
                 else:
                     assert False
                 self.start[i] += inc

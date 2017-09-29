@@ -27,7 +27,7 @@ holdout_pct = 0.1
 
 if __name__ == '__main__':
     p = NeonArgparser(__doc__)
-    p.add_argument('--glove', type=str, required=False, default='./data/glove.6B.100d.txt',
+    p.add_argument('--word_vectors', type=str, required=False, default='./data/glove.6B.100d.txt',
                    help='Path to word vector file, including word, followed by vector per line, space separated')
     p.add_argument('--exclusive_classes', type=str, required=False,
                    default='\"finance promos social forums updates\"',
@@ -86,7 +86,7 @@ if __name__ == '__main__':
         if options.sentiment_path is None else ['positive', 'negative']
 
     if options.sentiment_path:
-        classifier = EmailClassifier(options.glove, options.model_file, optimizer=optimizer,
+        classifier = EmailClassifier(options.word_vectors, options.model_file, optimizer=optimizer,
                                      num_analytics_features=0 if options.sentiment_path else 4,
                                      overlapping_classes=overlapping_classes, exclusive_classes=exclusive_classes,
                                      recurrent=options.conv_net)
@@ -108,10 +108,10 @@ if __name__ == '__main__':
         print('finished sentiment classification test, exiting')
         exit(0)
 
-    classifier = EmailClassifier(options.glove, options.model_file, optimizer=optimizer,
+    classifier = EmailClassifier(options.word_vectors, options.model_file, optimizer=optimizer,
                                  num_analytics_features=0 if options.sentiment_path else 4,
                                  overlapping_classes=overlapping_classes, exclusive_classes=exclusive_classes,
-                                 recurrent=options.conv_net)
+                                 recurrent=not options.conv_net)
 
     # determine if we expect to use a csv file or a maildir as our data source
     if os.path.isfile(options.data_path):
@@ -223,8 +223,6 @@ if __name__ == '__main__':
                                                     len(valid_emails[0][0])))
             steps = [1, 1]
         else:
-            valid_emails[0] = valid_emails[0].reshape((len(exclusive_targets), classifier.num_words,
-                                                    len(valid_emails[0][0])))
             steps = [30, 1]
 
         valid = BatchIterator(valid_emails,
@@ -238,9 +236,6 @@ if __name__ == '__main__':
 
         if options.conv_net:
             train_emails[0] = train_emails[0].reshape((len(exclusive_targets), 1, classifier.num_words,
-                                                       len(train_emails[0][0])))
-        else:
-            train_emails[0] = train_emails[0].reshape((len(exclusive_targets), classifier.num_words,
                                                        len(train_emails[0][0])))
 
         train = BatchIterator(train_emails,

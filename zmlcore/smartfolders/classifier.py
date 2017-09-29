@@ -27,12 +27,15 @@ from neon.layers import Multicost, GeneralizedCost
 from neon.transforms import CrossEntropyMulti, SumSquared
 from neon.optimizers import Adam
 from bs4 import BeautifulSoup
+from bs4.element import Comment
 from collections import deque
+import quopri
+import base64
 import re
 
 class EmailClassifier(object):
     def __init__(self, vocab_path, model_path, optimizer=Adam(), overlapping_classes=None, exclusive_classes=None,
-                 num_analytics_features=4, num_subject_words=8, num_body_words=22, recurrent=True):
+                 num_analytics_features=4, num_subject_words=8, num_body_words=52, recurrent=True):
         """
         loads the vocabulary and sets up LSTM networks for classification.
         """
@@ -55,8 +58,11 @@ class EmailClassifier(object):
 
         if recurrent:
             self.zero_tensors = [self.be.zeros((self.wordvec_dimensions, num_subject_words + num_body_words))]
+            self.zeros = self.zero_tensors[0][:, 0].get()
+            self.zeros = self.zeros.reshape((len(self.zeros)))
         else:
             self.zero_tensors = [self.be.zeros((1, num_subject_words + num_body_words, self.wordvec_dimensions))]
+            self.zeros = self.zero_tensors[0][:, 0, :].get()[0]
 
         # don't add an analytics tensor if we're content only
         if num_analytics_features > 0:
@@ -91,7 +97,7 @@ class EmailClassifier(object):
         :param vocab_path:
         :return:
         """
-        print('loading word vectors from {} ...'.format(vocab_path), end='', flush=True)
+        print('loading word vectors from {} ... '.format(vocab_path), end='', flush=True)
         vocab = {}
         with open(vocab_path, 'r') as f:
             tokens = []
@@ -103,33 +109,70 @@ class EmailClassifier(object):
         print('loaded successfully')
         return vocab
 
+    def tag_visible(self, element):
+        if element.parent.name in ['style', 'script', 'head', 'title', 'meta', '[document]']:
+            return False
+        if isinstance(element, Comment):
+            return False
+        return True
+
+    def text_from_html(self, body):
+        soup = BeautifulSoup(body, 'html.parser')
+        texts = soup.findAll(text=True)
+        visible_texts = filter(self.tag_visible, texts)
+        return u" ".join(t.strip() for t in visible_texts)
+
+    def visible_texts(self, body, charset):
+        """ get visible text from a document """
+        INVISIBLE_ELEMS = ('style', 'script', 'head', 'title')
+        RE_SPACES = re.compile(r'\s{3,}')
+
+        soup = BeautifulSoup(body, 'html.parser')
+        text = ' '.join([
+            s for s in soup.strings
+            if s.parent.name not in INVISIBLE_ELEMS
+        ])
+        # collapse multiple spaces to a space
+        return RE_SPACES.sub(' ', text)
+
     def extract_inline_text(self, part):
         """
         if a part of a message is text, this extracts and cleans the text. if not, it returns an empty string
         both 'text/plain' and 'text/html' are returned as plain text in string form
         :return:
         """
-        if 'attachment' in str(part.get('Content-Disposition')):
+        if 'attachment' in str(part['Content-Disposition']):
             return ''
 
         ct = part.get_content_type()
-        if ct == 'text/plain':
-            try:
-                result = part.get_payload(decode=True).decode(part.get_content_charset())
-            except:
+        if ct in ['text/plain', 'text/html']:
+            te = part['Content-Transfer-Encoding']
+            if te == 'quoted-printable':
+                payload = quopri.decodestring(part.get_payload())
+            elif te == 'base64':
+                payload = base64.b64decode(part.get_payload())
+            else:
+                payload = part.get_payload()
+
+            if ct == 'text/plain':
                 try:
-                    result = part.get_payload(decode=True).decode('utf-8')
+                    result = payload.decode(part.get_content_charset())
                 except:
-                    result = ''
-            return result
-        elif ct == 'text/html':
-            try:
-                text = BeautifulSoup(part.get_payload(), 'html.parser').get_text(separator=' ', strip=True)
-            except:
+                    try:
+                        result = payload.decode('utf-8')
+                    except:
+                        result = ''
+                return result
+            elif ct == 'text/html':
+                try:
+                    text = self.visible_texts(payload, part.get_content_charset())
+                except Exception as e:
+                    return ''
+                result = ' '.join([s.group(0).lower() for s, _ in zip(re.finditer(r"\w+|[^\w\n\s]", text),
+                                                                      range(self.num_words))])
+                return result
+            else:
                 return ''
-            lines=(line.strip() for line in text.splitlines())
-            chunks = (phrase.strip() for line in lines for phrase in line.split(' '))
-            return ''.join(chunk for chunk in chunks if chunk)
         else:
             return ''
 
@@ -141,20 +184,9 @@ class EmailClassifier(object):
         :param text:
         :return:
         """
-        num_words = self.num_body_words + self.num_subject_words
-        text_w = [s.group(0).lower() for s, i in zip(re.finditer(r"\w+|[^\w\s]", text), range(num_words))]
-        zt = self.zero_tensors[0]
-        if len(zt.shape) == 2:
-            zeros = zt[0, :].get()[0]
-        elif len(zt.shape) == 3:
-            zeros = zt[:, 0, :].get()[0]
-        elif len(zt.shape) == 4:
-            zeros = zt[:, :, 0, :].get()[0]
-        elif len(zt.shape) == 5:
-            zeros = zt[:, :, :, 0, :].get()[0]
-        else:
-            assert False
-        return [self.vocab.get(w, zeros) for w in text_w] + [zeros for _ in range(num_words - len(text_w))]
+        text_w = [s.group(0).lower() for s, i in zip(re.finditer(r"\w+|[^\w\s]", text), range(self.num_words))]
+
+        return [self.vocab.get(w, self.zeros) for w in text_w] + [self.zeros for _ in range(self.num_words - len(text_w))]
 
     def emails_to_nn_representation(self, emails, receiver_address=None):
         """
@@ -198,20 +230,10 @@ class EmailClassifier(object):
             body_w = [s.group(0).lower() for s, i in zip(re.finditer(r"\w+|[^\w\s]", e[text_key]),
                                                             range(self.num_body_words))]
 
-            zt = self.zero_tensors[0]
-            if len(zt.shape) == 2:
-                zeros = zt[:, :].get()[:, 0]
-            elif len(zt.shape) == 3:
-                zeros = zt[:, :, 0].get()[0]
-            elif len(zt.shape) == 4:
-                zeros = zt[:, :, :, 0].get()[0]
-            else:
-                assert False
-
-            rinputs += [self.vocab.get(w, zeros) for w in subject_w] + \
-                       [zeros for _ in range(np.maximum(int(0), self.num_subject_words - len(subject_w)))] + \
-                       [self.vocab.get(w, zeros) for w in body_w] + \
-                       [zeros for _ in range(np.maximum(int(0), self.num_body_words - len(body_w)))]
+            rinputs += [self.vocab.get(w, self.zeros) for w in subject_w] + \
+                       [self.zeros for _ in range(np.maximum(int(0), self.num_subject_words - len(subject_w)))] + \
+                       [self.vocab.get(w, self.zeros) for w in body_w] + \
+                       [self.zeros for _ in range(np.maximum(int(0), self.num_body_words - len(body_w)))]
 
             """
             if len(rinputs) < 30 * 20:
