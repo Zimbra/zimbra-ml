@@ -79,6 +79,7 @@ class BatchIterator(NervanaDataIterator):
 
         # may be recurrent
         self.ndata = int(len(inputs[0]) // steps[0])
+        self.shuffle_a = np.arange(self.ndata)
         self.steps = steps
         self.start = [0 for _ in inputs]
 
@@ -87,9 +88,9 @@ class BatchIterator(NervanaDataIterator):
         for i in range(len(inputs)):
             x = inputs[i]
             if not type(x.shape) in [list, tuple]:
-                x = x.reshape((x.shape, 1))
+                inputs[i] = x.reshape((x.shape, 1))
             elif x[-1] is None:
-                x = x.reshape(tuple([d for d in x.shape[:len(x.shape) - 1] + [1]]))
+                inputs[i] = x.reshape(tuple([d for d in x.shape[:len(x.shape) - 1] + [1]]))
 
         # transpose inputs, putting axis 0 at the end
         self.inputs = [self.be.array(x.transpose([i for i in range(1, len(x.shape))] + [0])) for x in inputs]
@@ -136,14 +137,15 @@ class BatchIterator(NervanaDataIterator):
         self.reset()
 
     def shuffle(self):
-        a = np.arange(self.ndata)
-        np.random.shuffle(a)
+        self.shuffle_a[:] = range(self.ndata)
+        np.random.shuffle(self.shuffle_a)
         for x, i in zip(self.inputs, range(len(self.inputs))):
-            shuffles = np.array([[v * self.steps[i] + j for j in range(self.steps[i])] for v in a]).flatten()
+            shuffles = np.array(
+                [[v * self.steps[i] + j for j in range(self.steps[i])] for v in self.shuffle_a]).flatten()
             x[:] = self.be.take(x, shuffles, axis=len(x.shape)-1)
         if not self.targets is None:
             for x in self.targets:
-                x[:] = self.be.take(x, a, axis=len(x.shape)-1)
+                x[:] = self.be.take(x, self.shuffle_a, axis=len(x.shape)-1)
 
     def test_shuffle(self):
         """

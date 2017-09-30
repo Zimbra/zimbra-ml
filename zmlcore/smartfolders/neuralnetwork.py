@@ -45,6 +45,7 @@ class ClassifierNetwork(Model):
                   # this is where inputs meet, and where we may want to add depth or
                   # additional functionality
                   Affine(300, init, activation=activation),
+                  Dropout(keep=0.75),
                   output_layers]
         super(ClassifierNetwork, self).__init__(layers, optimizer=optimizer)
 
@@ -82,38 +83,58 @@ class ClassifierNetwork(Model):
         else:
             if analytics_input:
                 # support analytics + content
-                input_layers = MergeMultistream([
-                    [
-                        Conv((1, 1, 3), padding=0, init=Kaiming(), activation=activation),
-                        Conv((3, 1, 5), padding=0, init=Kaiming(), activation=activation),
-                        Conv((3, 1, 10), strides={'str_h': 2, 'str_w': 1}, padding=0, init=Kaiming(),
-                             activation=activation),
-                        Conv((3, 1, 15), padding=0, init=Kaiming(), activation=activation),
-                        Conv((3, 1, 30), strides={'str_h': 2, 'str_w': 1}, padding=0, init=Kaiming(),
-                             activation=activation),
-                        Conv((3, 1, 60), strides={'str_h': 2, 'str_w': 2}, padding=0, init=Kaiming(),
-                             activation=activation),
-                        Conv((5, 1, 120), padding=0, init=Kaiming(), activation=activation),
-                        Conv((1, 2, 180), strides={'str_h': 1, 'str_w': 2}, padding=0, init=Kaiming(),
-                             activation=activation),
-                    ],
-                    [Affine(30, init, activation=Logistic())]],
-                    'stack')
+                input_layers = MergeMultistream([self.conv_net(init, activation),
+                                                 [Affine(30, init, activation=Logistic())]],
+                                                'stack')
             else:
                 # content only
-                input_layers = [
-                        Conv((1, 1, 3), padding=0, init=Kaiming(), activation=activation),
-                        Conv((3, 1, 5), padding=0, init=Kaiming(), activation=activation),
-                        Conv((3, 1, 10), strides={'str_h': 2, 'str_w': 1}, padding=0, init=Kaiming(),
-                             activation=activation),
-                        Conv((3, 1, 15), padding=0, init=Kaiming(), activation=activation),
-                        Conv((3, 1, 30), strides={'str_h': 2, 'str_w': 1}, padding=0, init=Kaiming(),
-                             activation=activation),
-                        Conv((3, 1, 45), padding=0, init=Kaiming(), activation=activation),
-                        Conv((3, 2, 135), strides={'str_h': 2, 'str_w': 2}, padding=0, init=Kaiming(),
-                             activation=activation),
-                        Conv((1, 2, 270), strides={'str_h': 1, 'str_w': 2}, padding=0, init=Kaiming(),
-                             activation=activation),
-                    ]
+                input_layers = self.conv_net(init, activation)
 
         return input_layers
+
+    def conv_net(self, init, activation, version=-1):
+        if version == 1:
+            return [
+                        Conv((1, 1, 3), padding=0, init=Kaiming(), activation=activation),
+                        Conv((3, 1, 5), padding=0, init=Kaiming(), activation=activation),
+                        Conv((3, 1, 7), strides={'str_h': 2, 'str_w': 1}, padding=0, init=Kaiming(),
+                             activation=activation),
+                        Conv((3, 1, 11), padding=0, init=Kaiming(), activation=activation),
+                        Conv((3, 1, 17), strides={'str_h': 2, 'str_w': 1}, padding=0, init=Kaiming(),
+                             activation=activation),
+                        Conv((3, 1, 23), padding=0, init=Kaiming(), activation=activation),
+                        Conv((3, 2, 31), strides={'str_h': 2, 'str_w': 2}, padding=0, init=Kaiming(),
+                             activation=activation),
+                        Conv((3, 2, 37), strides={'str_h': 1, 'str_w': 2}, padding=0, init=Kaiming(),
+                             activation=activation),
+                    ]
+        elif version == 2 or version == -1:
+            return [
+                        Conv((1, 1, 3), padding=0, init=Kaiming(), activation=activation),
+                        Conv((3, 1, 5), padding=0, init=Kaiming(), activation=activation),
+                        Conv((3, 1, 7), strides={'str_h': 2, 'str_w': 1}, padding=0, init=Kaiming(),
+                             activation=activation),
+                        Conv((3, 1, 11), padding=0, init=Kaiming(), activation=activation),
+                        Conv((3, 1, 13), strides={'str_h': 2, 'str_w': 1}, padding=0, init=Kaiming(),
+                             activation=activation),
+                        Conv((3, 1, 17), padding=0, init=Kaiming(), activation=activation),
+                        Conv((3, 2, 23), strides={'str_h': 2, 'str_w': 2}, padding=0, init=Kaiming(),
+                             activation=activation),
+                        Conv((3, 2, 31), strides={'str_h': 1, 'str_w': 2}, padding=0, init=Kaiming(),
+                             activation=activation),
+                    ]
+        elif version == 3 or version == -1:
+            return [
+                        Conv((1, 1, 3), padding=0, init=Kaiming(), activation=activation),
+                        Conv((3, 1, 5), padding=0, init=Kaiming(), activation=activation),
+                        Conv((3, 1, 7), strides={'str_h': 2, 'str_w': 1}, padding=0, init=Kaiming(),
+                             activation=activation),
+                        Conv((3, 1, 11), padding=0, init=Kaiming(), activation=activation),
+                        Conv((3, 1, 13), strides={'str_h': 2, 'str_w': 1}, padding=0, init=Kaiming(),
+                             activation=activation),
+                        Conv((3, 1, 17), padding=0, init=Kaiming(), activation=activation),
+                        Conv((3, 2, 34), strides={'str_h': 2, 'str_w': 2}, padding=0, init=Kaiming(),
+                             activation=activation),
+                        Conv((3, 2, 68), strides={'str_h': 1, 'str_w': 2}, padding=0, init=Kaiming(),
+                             activation=activation),
+                    ]
