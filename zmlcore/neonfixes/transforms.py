@@ -3,7 +3,7 @@ Portions (C) Copyright 2017 Synacor, Inc.
 Created: 9/22/2017, Michael Toutonghi
 
 This and other files in this directory are fixes for the Neon library, typically in the form of a subclass, sometimes
-a replacement
+a replacement or even a patch.
 
 Some portions of this file are copyrighted by Intel and used without usage restriction in accordance
 with the Apache 2.0 License, under which Intel Nervana Neon is licensed:
@@ -18,5 +18,5 @@ def fix_logistic_cpu(be):
     numpy_call_dict['sig'] = lambda left: expit(left)
 
 def fix_logistic(be):
-    # TODO: we need to support GPU... it is also numerically unstable
+    # TODO: we need to support GPU and sig2, which also numerically unstable
     fix_logistic_cpu(be)
