@@ -147,31 +147,35 @@ class EmailClassifier(object):
         ct = part.get_content_type()
         if ct in ['text/plain', 'text/html']:
             te = part['Content-Transfer-Encoding']
-            if te == 'quoted-printable':
-                payload = quopri.decodestring(part.get_payload())
-            elif te == 'base64':
-                payload = base64.b64decode(part.get_payload())
-            else:
-                payload = part.get_payload()
+            try:
+                if te == 'quoted-printable':
+                    payload = quopri.decodestring(part.get_payload(decode=True))
+                elif te == 'base64':
+                    payload = base64.b64decode(part.get_payload())
+                else:
+                    payload = part.get_payload()
 
-            if ct == 'text/plain':
-                try:
-                    result = payload.decode(part.get_content_charset())
-                except:
+                if ct == 'text/plain':
                     try:
-                        result = payload.decode('utf-8')
+                        result = payload.decode(part.get_content_charset())
                     except:
-                        result = ''
-                return result
-            elif ct == 'text/html':
-                try:
-                    text = self.visible_texts(payload, part.get_content_charset())
-                except Exception as e:
+                        try:
+                            result = payload.decode('utf-8')
+                        except Exception as e:
+                            result = ''
+                    return result
+                elif ct == 'text/html':
+                    try:
+                        text = self.visible_texts(payload, part.get_content_charset())
+                    except Exception as e:
+                        return ''
+                    result = ' '.join([s.group(0).lower() for s, _ in zip(re.finditer(r"\w+|[^\w\n\s]", text),
+                                                                          range(self.num_words))])
+                    return result
+                else:
                     return ''
-                result = ' '.join([s.group(0).lower() for s, _ in zip(re.finditer(r"\w+|[^\w\n\s]", text),
-                                                                      range(self.num_words))])
-                return result
-            else:
+            except Exception as e:
+                print('WARNING: exception {}: {} parsing part'.format(type(e), e))
                 return ''
         else:
             return ''
@@ -238,31 +242,12 @@ class EmailClassifier(object):
             body_v = [v for v, _ in zip((self.vocab[w] for
                                          w in (s.group(0).lower() for s in re.finditer(r"\w+|[^\w\s]", e[text_key]))
                                          if not self.vocab.get(w, None) is None),
-                                        range(self.num_words))]
-
-            """
-            subject_w = [s.group(0).lower() for s, i in zip(re.finditer(r"\w+|[^\w\s]", subject),
-                                                            range(self.num_subject_words))]
-            body_w = [s.group(0).lower() for s, i in zip(re.finditer(r"\w+|[^\w\s]", e[text_key]),
-                                                            range(self.num_body_words))]
-
-            subject_v = [self.vocab[w] for w in subject_w if not self.vocab.get(w, None) is None]
-            body_v = [self.vocab[w] for w in body_w if not self.vocab.get(w, None) is None]
-            """
+                                        range(self.num_body_words))]
 
             rinputs += subject_v + \
                        [self.zeros for _ in range(np.maximum(int(0), self.num_subject_words - len(subject_v)))] + \
                        body_v + \
                        [self.zeros for _ in range(np.maximum(int(0), self.num_body_words - len(body_v)))]
-
-            """
-            if len(rinputs) < 30 * 20:
-                print('subject={}, word type={}'.format(subject_w, [type(w) for w in subject_w]))
-                print('body={}, word type={}'.format(body_w, [type(w) for w in body_w]))
-                print('len(self.vocab)={}'.format(len(self.vocab)))
-                print('self.vocab[\'and\']={}'.format(self.vocab['and']))
-                print('first word of subject={}, body={}'.format(rinputs[0], rinputs[8]))
-            """
 
             if not self.neuralnet.overlapping_classes is None:
                 if receiver_address:
