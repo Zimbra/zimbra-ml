@@ -35,18 +35,18 @@ import re
 
 class EmailClassifier(object):
     def __init__(self, vocab_path, model_path, optimizer=Adam(), overlapping_classes=None, exclusive_classes=None,
-                 num_analytics_features=4, num_subject_words=8, num_body_words=52, recurrent=True):
+                 num_analytics_features=4, num_subject_words=8, num_body_words=52, network_type='conv_net'):
         """
         loads the vocabulary and sets up LSTM networks for classification.
         """
         self.wordvec_dimensions = 0
         self.vocab = self.load_vocabulary(vocab_path)
-        self.recurrent = recurrent
+        self.recurrent = network_type == 'lstm'
         assert self.wordvec_dimensions > 0
 
         self.neuralnet = ClassifierNetwork(overlapping_classes=overlapping_classes,
                                            exclusive_classes=exclusive_classes,
-                                           optimizer=optimizer, recurrent=recurrent,
+                                           optimizer=optimizer, network_type=network_type,
                                            analytics_input=False if num_analytics_features == 0 else True,
                                            width=self.wordvec_dimensions)
 
@@ -56,7 +56,7 @@ class EmailClassifier(object):
             except Exception as e:
                 print('{}:{} - cannot load model file {}'.format(type(e), e, model_path))
 
-        if recurrent:
+        if network_type == 'lstm':
             self.zero_tensors = [self.be.zeros((self.wordvec_dimensions, num_subject_words + num_body_words))]
             self.zeros = self.zero_tensors[0][:, 0].get()
             self.zeros = self.zeros.reshape((len(self.zeros)))
@@ -184,9 +184,13 @@ class EmailClassifier(object):
         :param text:
         :return:
         """
-        text_w = [s.group(0).lower() for s, i in zip(re.finditer(r"\w+|[^\w\s]", text), range(self.num_words))]
-
-        return [self.vocab.get(w, self.zeros) for w in text_w] + [self.zeros for _ in range(self.num_words - len(text_w))]
+        text_vectors = [v for v, _ in zip((self.vocab[w] for
+                                           w in (s.group(0).lower() for s in re.finditer(r"\w+|[^\w\s]", text))
+                                           if not self.vocab.get(w, None) is None),
+                                          range(self.num_words))]
+        # text_w = [s.group(0).lower() for s, i in zip(re.finditer(r"\w+|[^\w\s]", text), range(self.num_words))]
+        # text_v = [self.vocab[w] for w in text_w if not self.vocab.get(w, None) is None]
+        return text_vectors + [self.zeros for _ in range(self.num_words - len(text_vectors))]
 
     def emails_to_nn_representation(self, emails, receiver_address=None):
         """
@@ -225,15 +229,31 @@ class EmailClassifier(object):
             #   3. am I on the "to" line?
             #   4. is this a forward?
             subject = e[subject_key]
+
+            subject_v = [v for v, _ in zip((self.vocab[w] for
+                                            w in (s.group(0).lower() for s in re.finditer(r"\w+|[^\w\s]", subject))
+                                            if not self.vocab.get(w, None) is None),
+                                           range(self.num_subject_words))]
+
+            body_v = [v for v, _ in zip((self.vocab[w] for
+                                         w in (s.group(0).lower() for s in re.finditer(r"\w+|[^\w\s]", e[text_key]))
+                                         if not self.vocab.get(w, None) is None),
+                                        range(self.num_words))]
+
+            """
             subject_w = [s.group(0).lower() for s, i in zip(re.finditer(r"\w+|[^\w\s]", subject),
                                                             range(self.num_subject_words))]
             body_w = [s.group(0).lower() for s, i in zip(re.finditer(r"\w+|[^\w\s]", e[text_key]),
                                                             range(self.num_body_words))]
 
-            rinputs += [self.vocab.get(w, self.zeros) for w in subject_w] + \
-                       [self.zeros for _ in range(np.maximum(int(0), self.num_subject_words - len(subject_w)))] + \
-                       [self.vocab.get(w, self.zeros) for w in body_w] + \
-                       [self.zeros for _ in range(np.maximum(int(0), self.num_body_words - len(body_w)))]
+            subject_v = [self.vocab[w] for w in subject_w if not self.vocab.get(w, None) is None]
+            body_v = [self.vocab[w] for w in body_w if not self.vocab.get(w, None) is None]
+            """
+
+            rinputs += subject_v + \
+                       [self.zeros for _ in range(np.maximum(int(0), self.num_subject_words - len(subject_v)))] + \
+                       body_v + \
+                       [self.zeros for _ in range(np.maximum(int(0), self.num_body_words - len(body_v)))]
 
             """
             if len(rinputs) < 30 * 20:

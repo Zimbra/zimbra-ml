@@ -20,6 +20,7 @@ from zmlcore.smartfolders.classifier import EmailClassifier
 from zmlcore.smartfolders.traincallbacks import TrainingProgress, MisclassificationTest
 from zmlcore.data.dataiterator import TrainingIterator, BatchIterator
 from zmlcore.data.sentiment_loader import SentimentLoader
+from zmlcore.neonfixes.transforms import fix_logistic
 import os, email, mailbox
 
 # random percentage to holdout for validation when training
@@ -46,7 +47,7 @@ if __name__ == '__main__':
                         'Should be a quoted, space separated list.')
     p.add_argument('--shuffle_test', type=bool, required=False, default=False,
                    help='If true, shuffling of inputs and targets tests will be run')
-    p.add_argument('--conv_net', type=bool, required=False, default=False,
+    p.add_argument('--network_type', type=str, required=False, default='conv_net', choices=['conv_net', 'lstm'],
                    help='If true, uses convolutional instead of LSTM')
     p.add_argument('--train', type=bool, required=False, default=False,
                    help='If set to True, the \"--classify\" parameter must either be a maildir with folders that have\n' +
@@ -78,6 +79,8 @@ if __name__ == '__main__':
     pd.options.mode.chained_assignment = None
 
     be = gen_backend(**extract_valid_args(options, gen_backend))
+    # patch a fix to stabilize the CPU version of Neon's logistic function
+    # fix_logistic(be)
 
     optimizer = Adam(learning_rate=options.learning_rate)
 
@@ -89,7 +92,7 @@ if __name__ == '__main__':
         classifier = EmailClassifier(options.word_vectors, options.model_file, optimizer=optimizer,
                                      num_analytics_features=0 if options.sentiment_path else 4,
                                      overlapping_classes=overlapping_classes, exclusive_classes=exclusive_classes,
-                                     recurrent=options.conv_net)
+                                     network_type=options.network_type)
 
         # we will supercede the email classification function to test the content classification network only
         sdata = SentimentLoader(classifier, options.sentiment_path)
@@ -111,7 +114,7 @@ if __name__ == '__main__':
     classifier = EmailClassifier(options.word_vectors, options.model_file, optimizer=optimizer,
                                  num_analytics_features=0 if options.sentiment_path else 4,
                                  overlapping_classes=overlapping_classes, exclusive_classes=exclusive_classes,
-                                 recurrent=not options.conv_net)
+                                 network_type=options.network_type)
 
     # determine if we expect to use a csv file or a maildir as our data source
     if os.path.isfile(options.data_path):
@@ -218,7 +221,7 @@ if __name__ == '__main__':
         overlapping_targets = valid_df.loc[:, overlapping_classes].values
         exclusive_targets = valid_df.loc[:, exclusive_classes].values
 
-        if options.conv_net:
+        if options.network_type == 'conv_net':
             valid_emails[0] = valid_emails[0].reshape((len(exclusive_targets), 1, classifier.num_words,
                                                     len(valid_emails[0][0])))
             steps = [1, 1]
@@ -234,7 +237,7 @@ if __name__ == '__main__':
         overlapping_targets = train_df.loc[:, overlapping_classes].values
         exclusive_targets = train_df.loc[:, exclusive_classes].values
 
-        if options.conv_net:
+        if options.network_type == 'conv_net':
             train_emails[0] = train_emails[0].reshape((len(exclusive_targets), 1, classifier.num_words,
                                                        len(train_emails[0][0])))
 
