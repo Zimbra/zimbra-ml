@@ -15,8 +15,9 @@ from ..licensed.layers import Noise
 
 class ClassifierNetwork(Model):
     def __init__(self, overlapping_classes=None, exclusive_classes=None, analytics_input=True,
-                 network_type='conv_net', width=100, optimizer=Adam()):
+                 network_type='conv_net', num_words=60, width=100, optimizer=Adam()):
         self.width = width
+        self.num_words = num_words
         self.overlapping_classes = overlapping_classes
         self.recurrent = network_type == 'lstm'
 
@@ -44,7 +45,7 @@ class ClassifierNetwork(Model):
         layers = [input_layers,
                   # this is where inputs meet, and where we may want to add depth or
                   # additional functionality
-                  Affine(300, init, activation=activation),
+                  Affine(100 if self.num_words > 30 else 200, init, activation=activation),
                   Dropout(keep=0.75),
                   output_layers]
         super(ClassifierNetwork, self).__init__(layers, optimizer=optimizer)
@@ -83,58 +84,83 @@ class ClassifierNetwork(Model):
         else:
             if analytics_input:
                 # support analytics + content
-                input_layers = MergeMultistream([self.conv_net(init, activation),
+                input_layers = MergeMultistream([self.conv_net(activation),
                                                  [Affine(30, init, activation=Logistic())]],
                                                 'stack')
             else:
                 # content only
-                input_layers = self.conv_net(init, activation)
+                input_layers = self.conv_net(activation)
 
         return input_layers
 
-    def conv_net(self, init, activation, version=-1):
+    def conv_net(self, activation, init=Kaiming(), version=-1):
         if version == 1:
             return [
-                        Conv((1, 1, 3), padding=0, init=Kaiming(), activation=activation),
-                        Conv((3, 1, 5), padding=0, init=Kaiming(), activation=activation),
-                        Conv((3, 1, 7), strides={'str_h': 2, 'str_w': 1}, padding=0, init=Kaiming(),
+                        Conv((1, 1, 3), padding=0, init=init, activation=activation),
+                        Conv((3, 1, 5), padding=0, init=init, activation=activation),
+                        Conv((3, 1, 7), strides={'str_h': 2, 'str_w': 1}, padding=0, init=init,
                              activation=activation),
-                        Conv((3, 1, 11), padding=0, init=Kaiming(), activation=activation),
-                        Conv((3, 1, 17), strides={'str_h': 2, 'str_w': 1}, padding=0, init=Kaiming(),
+                        Conv((3, 1, 11), padding=0, init=init, activation=activation),
+                        Conv((3, 1, 17), strides={'str_h': 2, 'str_w': 1}, padding=0, init=init,
                              activation=activation),
-                        Conv((3, 1, 23), padding=0, init=Kaiming(), activation=activation),
-                        Conv((3, 2, 31), strides={'str_h': 2, 'str_w': 2}, padding=0, init=Kaiming(),
+                        Conv((3, 1, 23), padding=0, init=init, activation=activation),
+                        Conv((3, 2, 31), strides={'str_h': 2, 'str_w': 2}, padding=0, init=init,
                              activation=activation),
-                        Conv((3, 2, 37), strides={'str_h': 1, 'str_w': 2}, padding=0, init=Kaiming(),
-                             activation=activation),
-                    ]
-        elif version == 2 or version == -1:
-            return [
-                        Conv((1, 1, 3), padding=0, init=Kaiming(), activation=activation),
-                        Conv((3, 1, 5), padding=0, init=Kaiming(), activation=activation),
-                        Conv((3, 1, 7), strides={'str_h': 2, 'str_w': 1}, padding=0, init=Kaiming(),
-                             activation=activation),
-                        Conv((3, 1, 11), padding=0, init=Kaiming(), activation=activation),
-                        Conv((3, 1, 13), strides={'str_h': 2, 'str_w': 1}, padding=0, init=Kaiming(),
-                             activation=activation),
-                        Conv((3, 1, 17), padding=0, init=Kaiming(), activation=activation),
-                        Conv((3, 2, 23), strides={'str_h': 2, 'str_w': 2}, padding=0, init=Kaiming(),
-                             activation=activation),
-                        Conv((3, 2, 31), strides={'str_h': 1, 'str_w': 2}, padding=0, init=Kaiming(),
+                        Conv((3, 2, 37), strides={'str_h': 1, 'str_w': 2}, padding=0, init=init,
                              activation=activation),
                     ]
-        elif version == 3 or version == -1:
+        elif version == 2:
             return [
-                        Conv((1, 1, 3), padding=0, init=Kaiming(), activation=activation),
-                        Conv((3, 1, 5), padding=0, init=Kaiming(), activation=activation),
-                        Conv((3, 1, 7), strides={'str_h': 2, 'str_w': 1}, padding=0, init=Kaiming(),
+                        Conv((1, 1, 3), padding=0, init=init, activation=activation),
+                        Conv((3, 1, 5), padding=0, init=init, activation=activation),
+                        Conv((3, 1, 7), padding=0, strides={'str_h': 2 if self.num_words > 30 else 1,
+                                                            'str_w': 1}, init=init,
                              activation=activation),
-                        Conv((3, 1, 11), padding=0, init=Kaiming(), activation=activation),
-                        Conv((3, 1, 13), strides={'str_h': 2, 'str_w': 1}, padding=0, init=Kaiming(),
+                        Conv((3, 1, 11), padding=0, init=init, activation=activation),
+                        Conv((3, 1, 13), padding=0, strides={'str_h': 2 if self.num_words > 30 else 1,
+                                                             'str_w': 1}, init=init,
                              activation=activation),
-                        Conv((3, 1, 17), padding=0, init=Kaiming(), activation=activation),
-                        Conv((3, 2, 34), strides={'str_h': 2, 'str_w': 2}, padding=0, init=Kaiming(),
+                        Conv((3, 1, 17), padding=0, init=init, activation=activation),
+                        Conv((3, 2, 23), padding=0, strides={'str_h': 2, 'str_w': 2}, init=init,
                              activation=activation),
-                        Conv((3, 2, 68), strides={'str_h': 1, 'str_w': 2}, padding=0, init=Kaiming(),
+                        Conv((3, 2, 31), padding=0, strides={'str_h': 1, 'str_w': 2}, init=init,
+                             activation=activation),
+                    ]
+        elif version == 3:
+            return [
+                        Conv((1, 1, 3), padding=0, init=init, activation=activation),
+                        Conv((3, 1, 5), padding=0, init=init, activation=activation),
+                        Conv((3, 1, 7), strides={'str_h': 2 if self.num_words > 30 else 1,
+                                                 'str_w': 1}, padding=0, init=init,
+                             activation=activation),
+                        Conv((3, 1, 11), padding=0, init=init, activation=activation),
+                        Conv((3, 1, 13), strides={'str_h': 2 if self.num_words > 30 else 1,
+                                                  'str_w': 1}, padding=0, init=init,
+                             activation=activation),
+                        Conv((3, 1, 17), padding=0, init=init, activation=activation),
+                        Conv((3, 2, 23 if self.num_words > 30 else 29),
+                             strides={'str_h': 2, 'str_w': 2}, padding=0, init=init,
+                             activation=activation),
+                        Conv((3, 2, 31 if self.num_words > 30 else 59),
+                             strides={'str_h': 1, 'str_w': 2}, padding=0, init=init,
+                             activation=activation),
+                    ]
+        elif version == 4 or (version == -1):
+            return [
+                        Conv((1, 1, 3), padding=0, init=init, activation=activation),
+                        Conv((3, 1, 5), padding=0, init=init, activation=activation),
+                        Conv((3, 1, 7), strides={'str_h': 2 if self.num_words > 30 else 1,
+                                                 'str_w': 1}, padding=0, init=init,
+                             activation=activation),
+                        Conv((3, 1, 11), padding=0, init=init, activation=activation),
+                        Conv((3, 1, 13), strides={'str_h': 2,
+                                                  'str_w': 1}, padding=0, init=init,
+                             activation=activation),
+                        Conv((3, 1, 17), padding=0, init=init, activation=activation),
+                        Conv((3, 2, 23),
+                             strides={'str_h': 2, 'str_w': 2}, padding=0, init=init,
+                             activation=activation),
+                        Conv((3, 2, 31 if self.num_words > 30 else 35),
+                             strides={'str_h': 1, 'str_w': 2}, padding=0, init=init,
                              activation=activation),
                     ]

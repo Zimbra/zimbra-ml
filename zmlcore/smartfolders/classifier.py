@@ -35,7 +35,7 @@ import re
 
 class EmailClassifier(object):
     def __init__(self, vocab_path, model_path, optimizer=Adam(), overlapping_classes=None, exclusive_classes=None,
-                 num_analytics_features=4, num_subject_words=8, num_body_words=52, network_type='conv_net'):
+                 num_analytics_features=4, num_subject_words=8, num_body_words=22, network_type='conv_net'):
         """
         loads the vocabulary and sets up LSTM networks for classification.
         """
@@ -44,11 +44,15 @@ class EmailClassifier(object):
         self.recurrent = network_type == 'lstm'
         assert self.wordvec_dimensions > 0
 
+        self.num_subject_words = num_subject_words
+        self.num_body_words = num_body_words
+        self.num_words = num_subject_words + num_body_words
+
         self.neuralnet = ClassifierNetwork(overlapping_classes=overlapping_classes,
                                            exclusive_classes=exclusive_classes,
                                            optimizer=optimizer, network_type=network_type,
                                            analytics_input=False if num_analytics_features == 0 else True,
-                                           width=self.wordvec_dimensions)
+                                           num_words=self.num_words, width=self.wordvec_dimensions)
 
         if not model_path is None:
             try:
@@ -67,10 +71,6 @@ class EmailClassifier(object):
         # don't add an analytics tensor if we're content only
         if num_analytics_features > 0:
             self.zero_tensors += [self.be.zeros((num_analytics_features, 1))]
-
-        self.num_subject_words = num_subject_words
-        self.num_body_words = num_body_words
-        self.num_words = num_subject_words + num_body_words
 
         # only add an overlapping classifier if needed
         if overlapping_classes is None:
