@@ -1,5 +1,5 @@
 """
-created: 9/8/2017
+created: 9/8/2017, Michael Toutonghi
 (c) copyright 2017 Synacor, Inc
 
 Loads, initializes, and runs the Zimbra machine learning server.

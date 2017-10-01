@@ -1,21 +1,23 @@
 """
-created: 9/8/2017
+created: 9/8/2017, Michael Toutonghi
 (c) copyright 2017 Synacor, Inc
 
 Machine learning classifier for email.
 
 Initial implementation leverages primarily subject, address blocks, and body text. It performs the following processing:
 
-1. canonicalize subject and hash
-2. tokenize 8 words of subject and first 22 words of text for embed_dim x 30 LSTM input
+1. convert some maximum number of subject and body words to the text to analyze
+2. tokenize n words of subject and first o words of text for embed_dim x (n + o) input
 3. calculate contact/domain specific features (samedomain, sentto_recently, sentto_semirecently,
     relative_response_to_sender
 
-create neural networks with:
-    1. LSTM input for text
+Create neural networks with:
+    1. convolutional or LSTM input for text
     2. linear input for contact/domain specific features
     3. linear blending layer
-    4. softmax classification outputs
+    4. logistic and softmax classification outputs for overlapping / exclusive classification
+
+This also supports both text and HTML parsing in email, stripping HTML to the visible text only for processing.
 
 """
 
@@ -35,7 +37,7 @@ import re
 
 class EmailClassifier(object):
     def __init__(self, vocab_path, model_path, optimizer=Adam(), overlapping_classes=None, exclusive_classes=None,
-                 num_analytics_features=4, num_subject_words=8, num_body_words=22, network_type='conv_net'):
+                 num_analytics_features=4, num_subject_words=8, num_body_words=52, network_type='conv_net'):
         """
         loads the vocabulary and sets up LSTM networks for classification.
         """

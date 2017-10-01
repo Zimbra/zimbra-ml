@@ -1,10 +1,13 @@
 """
-created: 9/21/2017
+created: 9/21/2017, Michael Toutonghi
 (c) copyright 2017 Synacor, Inc
 
 This is a simple iterator for training data that iterates over both the inputs and targets for training
-neural networks. It expects the inputs and targets to be independent iterables of the same number of elements
-and simply provides the interface Intel's Nervana Neon Model likes to see
+neural networks. It expects the inputs and targets to be independent numpy arrays of the same number of elements,
+except for the fact that recurrent NN input should have the steps inline as additional samples, which will be
+divided to the right number of steps by dividing the total by batch size.
+This data iterator supports recurrent, as well as a mixture of recurrent and non-recurrent input as lists of
+numpy arrays. It also supports lists of target nupy arrays.
 """
 import numpy as np
 from neon.data import NervanaDataIterator

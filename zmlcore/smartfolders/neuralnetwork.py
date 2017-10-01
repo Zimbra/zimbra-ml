@@ -45,6 +45,7 @@ class ClassifierNetwork(Model):
         layers = [input_layers,
                   # this is where inputs meet, and where we may want to add depth or
                   # additional functionality
+                  Dropout(keep=0.8),
                   Affine(100 if self.num_words > 30 else 200, init, activation=activation),
                   Dropout(keep=0.75),
                   output_layers]
