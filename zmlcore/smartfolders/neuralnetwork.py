@@ -11,7 +11,6 @@ from neon.layers import MergeMultistream, LSTM, Affine, RecurrentSum, Tree, Bran
 from neon.initializers import GlorotUniform, Kaiming
 from neon.optimizers import Adam
 from neon.transforms import Softmax, Logistic, Rectlin
-from ..licensed.layers import Noise
 
 class ClassifierNetwork(Model):
     def __init__(self, overlapping_classes=None, exclusive_classes=None, analytics_input=True,
