@@ -37,7 +37,7 @@ import re
 
 class EmailClassifier(object):
     def __init__(self, vocab_path, model_path, optimizer=Adam(), overlapping_classes=None, exclusive_classes=None,
-                 num_analytics_features=4, num_subject_words=8, num_body_words=22, network_type='conv_net'):
+                 num_analytics_features=4, num_subject_words=8, num_body_words=52, network_type='conv_net'):
         """
         loads the vocabulary and sets up LSTM networks for classification.
         """

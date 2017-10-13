@@ -87,7 +87,6 @@ class BatchIterator(NervanaDataIterator):
         self.start = [0 for _ in inputs]
 
         # ensure that we have properly formed shape with at least 2 dimensions, and a numer in the last dimension
-        self.inputs = []
         for i in range(len(inputs)):
             x = inputs[i]
             if not type(x.shape) in [list, tuple]:
@@ -96,10 +95,11 @@ class BatchIterator(NervanaDataIterator):
                 inputs[i] = x.reshape(tuple([d for d in x.shape[:len(x.shape) - 1] + [1]]))
 
         # transpose inputs, putting axis 0 at the end
-        self.inputs = [self.be.array(x.transpose([i for i in range(1, len(x.shape))] + [0])) for x in inputs]
-        self.targets = None if targets is None else [self.be.array(y.transpose(
-            [i for i in range(1, len(y.shape))] + [0]
-        )) for y in targets]
+        self.inputs = [np.transpose(x, [i for i in range(1, len(x.shape))] + [0]) for x in inputs]
+        self.targets = None if targets is None else [np.transpose(y, [i for i in range(1, len(y.shape))] + [0]
+                                                                  ) for y in targets]
+        self.input_tensors = None
+        self.target_tensors = None
 
     def reset(self):
         self.start = [0 for _ in self.start]
@@ -117,24 +117,39 @@ class BatchIterator(NervanaDataIterator):
         """
         pos = self.start[0] // self.steps[0]
         while pos + self.be.bsz <= self.ndata:
-            y = None if self.targets is None else [a[:,pos:pos + self.be.bsz] for a in self.targets]
+            y = None if self.targets is None else [a[:,pos:pos + self.be.bsz].copy() for a in self.targets]
 
             x = []
             for a, i in zip(self.inputs, range(len(self.inputs))):
                 inc = self.steps[i] * self.be.bsz
                 if len(a.shape) == 2:
-                    x += [a[:,self.start[i]:self.start[i] + inc]]
+                    x += [a[:,self.start[i]:self.start[i] + inc].copy()]
                 elif len(a.shape) == 3:
-                    x += [a[:, :, self.start[i]:self.start[i] + inc]]
+                    x += [a[:, :, self.start[i]:self.start[i] + inc].copy()]
                 elif len(a.shape) == 4:
-                    x += [a[:, :, :, self.start[i]:self.start[i] + inc]]
+                    x += [a[:, :, :, self.start[i]:self.start[i] + inc].copy()]
                 elif len(a.shape) == 5:
-                    x += [a[:, :, :, :, self.start[i]:self.start[i] + inc]]
+                    x += [a[:, :, :, :, self.start[i]:self.start[i] + inc].copy()]
                 else:
                     assert False
                 self.start[i] += inc
 
-            yield x if len(x) > 1 else x[0], y if y is None or len(y) > 1 else y[0]
+            if self.input_tensors is None:
+                self.input_tensors = [self.be.array(a) for a in x]
+            else:
+                for i, a in zip(self.input_tensors, x):
+                    i[:] = a
+
+            if not y is None:
+                if self.target_tensors is None:
+                    self.target_tensors = [self.be.array(t) for t in y]
+                else:
+                    for t, a in zip(self.target_tensors, y):
+                        t[:] = a
+
+            yield self.input_tensors if len(self.input_tensors) > 1 else self.input_tensors[0], \
+                  self.target_tensors if self.target_tensors is None or len(self.target_tensors) > 1 else \
+                      self.target_tensors[0]
             pos = self.start[0] // self.steps[0]
 
         self.reset()
@@ -145,10 +160,10 @@ class BatchIterator(NervanaDataIterator):
         for x, i in zip(self.inputs, range(len(self.inputs))):
             shuffles = np.array(
                 [[v * self.steps[i] + j for j in range(self.steps[i])] for v in self.shuffle_a]).flatten()
-            x[:] = self.be.take(x, shuffles, axis=len(x.shape)-1)
+            x[:] = np.take(x, shuffles, axis=len(x.shape)-1)
         if not self.targets is None:
             for x in self.targets:
-                x[:] = self.be.take(x, self.shuffle_a, axis=len(x.shape)-1)
+                x[:] = np.take(x, self.shuffle_a, axis=len(x.shape)-1)
 
     def test_shuffle(self):
         """
@@ -173,20 +188,16 @@ class BatchIterator(NervanaDataIterator):
         for i in a:
             for x, s in zip(self.inputs, self.steps):
                 if len(x.shape) == 2:
-                    z_if_ok = sum([0 if (self.targets[0][:, i].get()[0, 0] ==
-                                         y.get()[0, 0] for y in [x[:, i * s:(i * s) + s]])
+                    z_if_ok = sum([0 if (self.targets[0][:, i] == y for y in [x[:, i * s:(i * s) + s]])
                                   else 1])
                 elif len(x.shape) == 3:
-                    z_if_ok = sum([0 if (self.targets[0][:, i].get()[0, 0] ==
-                                         y.get()[0, 0] for y in [x[:, :, i * s:(i * s) + s]])
+                    z_if_ok = sum([0 if (self.targets[0][:, i] == y for y in [x[:, :, i * s:(i * s) + s]])
                                   else 1])
                 elif len(x.shape) == 4:
-                    z_if_ok = sum([0 if (self.targets[0][:, i].get()[0, 0] ==
-                                         y.get()[0, 0] for y in [x[:, :, :, i * s:(i * s) + s]])
+                    z_if_ok = sum([0 if (self.targets[0][:, i] == y for y in [x[:, :, :, i * s:(i * s) + s]])
                                   else 1])
                 elif len(x.shape) == 5:
-                    z_if_ok = sum([0 if (self.targets[0][:, i].get()[0, 0] ==
-                                         y.get()[0, 0] for y in [x[:, :, :, :, i * s:(i * s) + s]])
+                    z_if_ok = sum([0 if (self.targets[0][:, i] == y for y in [x[:, :, :, :, i * s:(i * s) + s]])
                                    else 1])
                 else:
                     assert False
