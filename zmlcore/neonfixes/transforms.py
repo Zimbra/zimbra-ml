@@ -11,7 +11,7 @@ https://github.com/NervanaSystems/neon/blob/master/LICENSE
 """
 
 from scipy.special import expit
-from neon.backends.nervanacpu import numpy_call_dict
+from neon.backends.nervanacpu import numpy_call_dict_cpu
 
 def fix_logistic_cpu(be):
     assert not numpy_call_dict.get('sig', None) is None

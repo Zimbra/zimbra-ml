@@ -77,10 +77,10 @@ class EmailClassifier(object):
         # only add an overlapping classifier if needed
         if overlapping_classes is None:
             self.cost = GeneralizedCost(CrossEntropyMulti())
-            self.neuralnet.initialize(self.zero_tensors[0], cost=self.cost)
+            self.neuralnet.initialize(self.zero_tensors[0].shape, cost=self.cost)
         else:
             self.cost = Multicost([GeneralizedCost(SumSquared()), GeneralizedCost(CrossEntropyMulti())])
-            self.neuralnet.initialize(self.zero_tensors, cost=self.cost)
+            self.neuralnet.initialize((t.shape for t in self.zero_tensors), cost=self.cost)
 
     def fit(self, dataset, optimizer, num_epochs, callbacks):
         self.neuralnet.fit(dataset, self.cost, optimizer, num_epochs, callbacks)
