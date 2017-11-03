@@ -11,11 +11,16 @@ https://github.com/NervanaSystems/neon/blob/master/LICENSE
 """
 
 from scipy.special import expit
-from neon.backends.nervanacpu import numpy_call_dict_cpu
 
 def fix_logistic_cpu(be):
-    assert not numpy_call_dict.get('sig', None) is None
-    numpy_call_dict['sig'] = lambda left: expit(left)
+    try:
+        from neon.backends.nervanacpu import numpy_call_dict_cpu
+        assert not numpy_call_dict_cpu.get('sig', None) is None
+        numpy_call_dict_cpu['sig'] = lambda left: expit(left)
+    except Exception as e:
+        from neon.backends.nervanacpu import numpy_call_dict
+        assert not numpy_call_dict.get('sig', None) is None
+        numpy_call_dict['sig'] = lambda left: expit(left)
 
 def fix_logistic(be):
     # TODO: we need to support GPU and sig2, which also numerically unstable
