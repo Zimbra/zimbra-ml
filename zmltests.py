@@ -78,6 +78,11 @@ if __name__ == '__main__':
     # don't display errors writing to subset copies of DataFrames
     pd.options.mode.chained_assignment = None
 
+    # for now, we don't trust the mkl backend
+    if options.backend == 'mkl':
+        print('Resetting mkl backend to cpu')
+        options.backend = 'cpu'
+
     be = gen_backend(**extract_valid_args(options, gen_backend))
     # patch a fix to stabilize the CPU version of Neon's logistic function
     # fix_logistic(be)
