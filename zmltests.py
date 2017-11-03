@@ -85,7 +85,7 @@ if __name__ == '__main__':
 
     be = gen_backend(**extract_valid_args(options, gen_backend))
     # patch a fix to stabilize the CPU version of Neon's logistic function
-    # fix_logistic(be)
+    fix_logistic(be)
 
     optimizer = Adam(learning_rate=options.learning_rate)
 
