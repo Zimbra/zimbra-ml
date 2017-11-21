@@ -34,13 +34,18 @@ from collections import deque
 import quopri
 import base64
 import re
+import uuid
+
+_vocabularies = {}
 
 class EmailClassifier(object):
     def __init__(self, vocab_path, model_path, optimizer=Adam(), overlapping_classes=None, exclusive_classes=None,
-                 num_analytics_features=4, num_subject_words=8, num_body_words=52, network_type='conv_net'):
+                 num_analytics_features=4, num_subject_words=8, num_body_words=52, network_type='conv_net',
+                 name=str(uuid.uuid4())):
         """
         loads the vocabulary and sets up LSTM networks for classification.
         """
+        self.name = name
         self.wordvec_dimensions = 0
         self.vocab = self.load_vocabulary(vocab_path)
         self.recurrent = network_type == 'lstm'
@@ -99,17 +104,28 @@ class EmailClassifier(object):
         :param vocab_path:
         :return:
         """
-        print('loading word vectors from {} ... '.format(vocab_path), end='', flush=True)
-        vocab = {}
-        with open(vocab_path, 'r') as f:
-            tokens = []
-            for line in f:
-                if len(line) > 0:
-                    tokens = line.split()
-                    vocab[tokens[0]] = np.array(tokens[1:], dtype=np.float64)
-            self.wordvec_dimensions = len(tokens) - 1
-        print('loaded successfully')
+        vocab = _vocabularies.get(vocab_path, default=None)
+        if not vocab_path:
+            print('loading word vectors from {} ... '.format(vocab_path), end='', flush=True)
+            vocab = {}
+            with open(vocab_path, 'r') as f:
+                tokens = []
+                for line in f:
+                    if len(line) > 0:
+                        tokens = line.split()
+                        vocab[tokens[0]] = np.array(tokens[1:], dtype=np.float64)
+                self.wordvec_dimensions = len(tokens) - 1
+            print('loaded successfully')
+            _vocabularies[vocab_path] = vocab
         return vocab
+
+    @property
+    def overlapping_classes(self):
+        return self.neuralnet.overlapping_classes
+
+    @property
+    def exclusive_classes(self):
+        return self.neuralnet.exclusive_classes
 
     def tag_visible(self, element):
         if element.parent.name in ['style', 'script', 'head', 'title', 'meta', '[document]']:

@@ -34,6 +34,10 @@ if __name__ == '__main__':
                    default='\"finance promos social forums updates\"',
                    help='The labels of the exclusive classes to either train on or classify. ' +
                         'Should be a quoted, space separated list.')
+    p.add_argument('--overlapping_classes', type=str, required=False,
+                   default='\"important\"',
+                   help='The labels of the classes, which can overlap with themselves or an exclusive class. ' +
+                        'Should be a quoted, space separated list.')
     p.add_argument('--sentiment_path', type=str, required=False, default=None,
                    help='This overrides the email classification function altogether to benchmark the content ' +
                         'classification network only. The parameter is a path to the root directory of ' +
@@ -41,10 +45,6 @@ if __name__ == '__main__':
                         'for this paper: https://cs224d.stanford.edu/reports/PouransariHadi.pdf. ' +
                         'If this is specified, the content classification network will be used on the '
                         'database provided to classify into neg and pos results.')
-    p.add_argument('--overlapping_classes', type=str, required=False,
-                   default='\"important\"',
-                   help='The labels of the classes, which can overlap with themselves or an exclusive class. ' +
-                        'Should be a quoted, space separated list.')
     p.add_argument('--shuffle_test', type=bool, required=False, default=False,
                    help='If true, shuffling of inputs and targets tests will be run')
     p.add_argument('--network_type', type=str, required=False, default='conv_net', choices=['conv_net', 'lstm'],
