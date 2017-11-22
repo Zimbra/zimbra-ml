@@ -249,12 +249,16 @@ class TrainClassifier(graphene.Mutation):
     class Arguments:
         train = TrainingSpec()
 
-    classifier_info = ClassifierInfo()
+    classifier_info = graphene.Field(ClassifierInfo)
 
     def mutate(root, info, train):
         classifier_info = ClassifierQuery.resolve_classifier_info(None, None, train.classifier_spec)
         # TODO: train the classifier for the specified epochs
-        return TrainClassifier(classifier_info=classifier_info)
+        return classifier_info
+
+
+class Mutations(graphene.ObjectType):
+    train_classifier = TrainClassifier.Field()
 
 
 class ObserveClassifier(graphene.ObjectType):
@@ -264,13 +268,11 @@ class ObserveClassifier(graphene.ObjectType):
     place_holder = graphene.Int()
 
     def resolve_place_holder(root, info):
-        return 20
-        #Observable.interval(1000)\
-        #                 .map(lambda i: RandomType(seconds=i, random_int=random.randint(0, 500)))
+        pass
 
 
 def main():
-    schema = graphene.Schema(query=ClassifierQuery, mutation=TrainClassifier, subscription=ObserveClassifier)
+    schema = graphene.Schema(query=ClassifierQuery, mutation=Mutations, subscription=ObserveClassifier)
     result = schema.execute('{classifications(classifierSpec: {}, data: [{url:"test"}]) {url, exclusive}}')
     x = result.data
     print(x)
