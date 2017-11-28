@@ -20,7 +20,7 @@ Create neural networks with:
 This also supports both text and HTML parsing in email, stripping HTML to the visible text only for processing.
 
 """
-
+import os
 import email
 from email.utils import getaddresses
 import numpy as np
@@ -104,8 +104,9 @@ class EmailClassifier(object):
         :param vocab_path:
         :return:
         """
+        vocab_path = os.path.abspath(vocab_path)
         vocab = _vocabularies.get(vocab_path, default=None)
-        if not vocab_path:
+        if not vocab:
             print('loading word vectors from {} ... '.format(vocab_path), end='', flush=True)
             vocab = {}
             with open(vocab_path, 'r') as f:
