@@ -1,0 +1,8 @@
+mutation {createClassifier(classifierSpec:{}) {classifierInfo {
+  classifierId
+  vocabPath
+  numSubjectWords
+  numBodyWords
+  numFeatures
+  epoch
+}}}

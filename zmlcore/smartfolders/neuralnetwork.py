@@ -18,6 +18,7 @@ class ClassifierNetwork(Model):
         self.width = width
         self.num_words = num_words
         self.overlapping_classes = overlapping_classes
+        self.analytics_input = analytics_input
         self.recurrent = network_type == 'lstm'
 
         # we must have some exclusive classes
@@ -35,12 +36,12 @@ class ClassifierNetwork(Model):
         if self.overlapping_classes is None:
             output_layers = [Affine(len(self.exclusive_classes), init, activation=Softmax())]
         else:
-            output_branch = BranchNode(name='overlapping_exclusive')
+            output_branch = BranchNode(name='exclusive_overlapping')
             output_layers = Tree([[SkipNode(),
                                    output_branch,
-                                   Affine(len(self.overlapping_classes), init, activation=Logistic())],
+                                   Affine(len(self.exclusive_classes), init, activation=Softmax())],
                                   [output_branch,
-                                   Affine(len(self.exclusive_classes), init, activation=Softmax())]])
+                                   Affine(len(self.overlapping_classes), init, activation=Logistic())]])
         layers = [input_layers,
                   # this is where inputs meet, and where we may want to add depth or
                   # additional functionality

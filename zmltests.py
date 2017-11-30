@@ -221,8 +221,8 @@ if __name__ == '__main__':
 
         ol_len = len(overlapping_classes)
 
-        valid_emails = classifier.emails_to_nn_representation(list(valid_df['message'].values),
-                                                              receiver_address=options.receiver_email)
+        valid_emails = classifier.content_to_nn_representation(list(valid_df['message'].values),
+                                                               receiver_address=options.receiver_email)
         overlapping_targets = valid_df.loc[:, overlapping_classes].values
         exclusive_targets = valid_df.loc[:, exclusive_classes].values
 
@@ -231,14 +231,16 @@ if __name__ == '__main__':
                                                     len(valid_emails[0][0])))
             steps = [1, 1]
         else:
+            # TODO: fix inline constant hack: number of steps in first number should depend on number of total words
             steps = [30, 1]
 
         valid = BatchIterator(valid_emails,
                               targets=[overlapping_targets, exclusive_targets],
                               steps=steps)
 
-        train_emails = classifier.emails_to_nn_representation(list(train_df['message'].values),
-                                                              receiver_address=options.receiver_email)
+        train_emails = classifier.content_to_nn_representation(list(train_df['message'].values),
+                                                               receiver_address=options.receiver_email)
+
         overlapping_targets = train_df.loc[:, overlapping_classes].values
         exclusive_targets = train_df.loc[:, exclusive_classes].values
 
@@ -255,7 +257,7 @@ if __name__ == '__main__':
         callbacks.add_callback(TrainMulticostCallback())
         print('Training neural networks on {} samples for {} epochs. Starting point:'.format(len(train_df), options.epochs))
         print('Exclusive class misclassification error = {:.03}%'.format(
-            classifier.neuralnet.eval(valid, MultiMetric(Misclassification(), 1))[0] * 100))
+            classifier.neuralnet.eval(valid, MultiMetric(Misclassification(), 0))[0] * 100))
         classifier.fit(train, optimizer, options.epochs, callbacks)
     else:
         # if we are to classify, then we need to create dataframe with the classes and save it to our results path

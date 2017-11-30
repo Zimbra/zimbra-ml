@@ -1,0 +1,10 @@
+query {classifiers {
+  classifierId
+  vocabPath
+  numSubjectWords
+  numBodyWords
+  numFeatures
+  exclusiveClasses
+  overlappingClasses
+  epoch
+}}
