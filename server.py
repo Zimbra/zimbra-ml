@@ -12,29 +12,41 @@ import datetime
 from tornadoql.tornadoql import TornadoQL, PORT
 from graphene import Schema
 from schema.schema import ClassifierQuery, Mutations, ObserveClassifier
-from neon.util.argparser import NeonArgparser, extract_valid_args
+from neon.util.argparser import NeonArgparser
 from neon.backends import gen_backend
+from neon.util.argparser import extract_valid_args
 from zmlcore.neonfixes.transforms import fix_logistic
+
+
+class Config:
+    options = None
+    initialized = False
+
+    @staticmethod
+    def initialize_neon():
+        if not Config.initialized:
+            # for now, we don't trust the mkl backend
+            if Config.options.backend == 'mkl':
+                print('Resetting mkl backend to cpu')
+                Config.options.backend = 'cpu'
+
+            be = gen_backend(**extract_valid_args(Config.options, gen_backend))
+            # patch a fix to stabilize the CPU version of Neon's logistic function
+            fix_logistic(be)
+            Config.initialized = True
 
 
 def main():
     p = NeonArgparser(__doc__)
-    p.add_argument('--word_vectors', type=str, required=False, default='./data/glove.6B.100d.txt',
-                   help='Path to word vector file, including word, followed by vector per line, space separated')
     options = p.parse_args(gen_be=False)
 
-    if options.rng_seed:
-        options.rng_seed = int(datetime.datetime.now().timestamp())
+    Config.options = options
+
+    if Config.options.rng_seed:
+        Config.options.rng_seed = int(datetime.datetime.now().timestamp())
     np.random.seed(options.rng_seed)
 
-    # for now, we don't trust the mkl backend
-    if options.backend == 'mkl':
-        print('Resetting mkl backend to cpu')
-        options.backend = 'cpu'
-
-    be = gen_backend(**extract_valid_args(options, gen_backend))
-    # patch a fix to stabilize the CPU version of Neon's logistic function
-    fix_logistic(be)
+    Config.initialize_neon()
 
     print('Server starting on port {}'.format(PORT))
     app = TornadoQL.start(schema=Schema(query=ClassifierQuery, mutation=Mutations, subscription=ObserveClassifier))

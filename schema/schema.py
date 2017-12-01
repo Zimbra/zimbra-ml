@@ -27,7 +27,7 @@ class DEFAULTS:
     TRAIN_PATH = 'data/meta/'
     META_EXT = '.zml'
     TRAIN_EXT = '.train'
-    OVERLAPPING = ['important']
+    OVERLAPPING = None
     EXCLUSIVE = ['finance', 'promos', 'social', 'forums', 'updates']
     NUM_REQUESTS = 10
 
@@ -38,13 +38,21 @@ _global_classifier_info = {}
 
 
 def get_content_as_bytes(path):
-    r = http.request('GET', path)
-    return r.read()
+    if not os.path.isfile(path):
+        r = http.request('GET', path)
+        return r.read()
+    else:
+        with open(path, 'r') as f:
+            return f.read()
 
 
 def get_content_as_str(path):
-    r = http.request('GET', path)
-    return r.read().decode(r.info().get_content_charset())
+    if not os.path.isfile(path):
+        r = http.request('GET', path)
+        return r.read().decode(r.info().get_content_charset())
+    else:
+        with open(path, 'r') as f:
+            return f.read()
 
 
 class OverlappingClassification(graphene.ObjectType):
@@ -109,7 +117,7 @@ class EmailMessage(Text):
 class TrainingData(graphene.InputObjectType):
     class Meta:
         description = 'Training data and targets to train a classifier.'
-    data = graphene.List(EmailMessage, description='List of text document samples or email messages for training.')
+    data = graphene.List(Text, description='List of text document samples or email messages for training.')
     exclusive_targets = graphene.List(graphene.String,
                                       description='A list of exclusive classes that correspond '
                                                   'positionally to the list of documents.',
@@ -177,10 +185,11 @@ class ClassifierInfo(graphene.ObjectType):
 
 class TrainingSpec(graphene.InputObjectType):
     class Meta:
-        description = 'Everything needed to identify and train a classifier, including number of epochs,' \
-                      'optimizer, and learning rate.'
+        description = 'Everything needed to identify and train a classifier, including number of epochs ' \
+                      'and learning rate.'
     classifier_id = graphene.String(description='Valid ID of an instantiated classifier.')
-    data = TrainingData()
+    train = TrainingData()
+    test = TrainingData(default_value=None)
     epochs = graphene.Int(description='Number of epochs to train with the data passed. If the classifier is already '
                                       'trained, this will add epochs to its training', default_value=5)
     learning_rate = graphene.String(description='The learning rate for training.', default_value=0.001)
@@ -314,7 +323,7 @@ class ClassifierQuery(graphene.ObjectType):
 
     @staticmethod
     def _resolve_classifications(root, info, classifier_id, data, receiver_address):
-        _ = ClassifierQuery.resolve_classifier(root, info, classifier_id)
+        _ = ClassifierQuery._resolve_classifier(root, info, classifier_id)
         classifier = _global_classifiers.get(classifier_id, None)
         if data is None or len(data) <= 0:
             raise IndexError('Invalid data parameter for classification')
@@ -403,56 +412,68 @@ class CreateClassifier(graphene.Mutation):
 
 class TrainClassifier(graphene.Mutation):
     class Meta:
-        description = 'This mutation is used to train a new or instantiated classifier.'
+        description = 'This mutation is used to train an already created classifier.'
     class Arguments:
-        train = TrainingSpec()
+        spec = TrainingSpec()
 
     classifier_info = graphene.Field(ClassifierInfo)
 
     @staticmethod
-    def mutate(root, info, classifier_spec):
+    def mutate(root, info, spec):
         return _global_classifier_threads.submit(TrainClassifier._mutate,
-                                                 root, info, classifier_spec).result()
+                                                 root, info, spec).result()
 
     @staticmethod
-    def _mutate(root, info, train):
-        classifier_info = ClassifierQuery.resolve_classifier(root, info, train.classifier_id)
+    def _mutate(root, info, spec):
+        classifier_info = ClassifierQuery._resolve_classifier(root, info, spec.classifier_id)
 
         # if we failed to load, we would throw an exception past here
-        classifier = _global_classifiers[train.classifier_id]
+        classifier = _global_classifiers[spec.classifier_id]
         assert isinstance(classifier, EmailClassifier)
 
         # load content for training, if necessary
-        if isinstance(train.data[0], EmailMessage):
+        if isinstance(spec.train.data[0], EmailMessage):
             classifier.train(
                 [email.message_from_bytes(get_content_as_str(em.url)) if em.text is None else
-                 email.message_from_string(em.text) for em in train.data],
-                [train.data.exclusive_targets, train.data.overlapping_targets] if classifier.overlapping_classes else
-                [train.data.exclusive_targets],
-                features=None if train.data[0].text_features is None else
-                [np.array(em.text_features.features) for em in train.data],
-                receiver_address=train.data.receiver_address, serialize=1,
-                save_path=os.path.join(DEFAULTS.TRAIN_PATH, train.classifier_id + DEFAULTS.TRAIN_EXT),
-                model_file=os.path.join(DEFAULTS.MODEL_PATH, train.classifier_id + DEFAULTS.MODEL_EXT),
-                holdout_pct=train.holdout_pct, learning_rate=train.learning_rate, epochs=train.epochs)
+                 email.message_from_string(em.text) for em in spec.train.data],
+                [spec.train.exclusive_targets, spec.train.overlapping_targets] if classifier.overlapping_classes else
+                [spec.train.exclusive_targets],
+                features=None if spec.train.data[0].text_features is None else
+                [np.array(em.text_features.features) for em in spec.train.data],
+                test_content=None if spec.test is None else
+                    [email.message_from_bytes(get_content_as_str(em.url)) if em.text is None else
+                     email.message_from_string(em.text) for em in spec.test.data],
+                test_targets=None if spec.test is None else
+                    [spec.test.exclusive_targets, spec.test.overlapping_targets] if classifier.overlapping_classes else
+                    [spec.test.exclusive_targets],
+                test_features=None if spec.test is None or spec.test.data[0].text_features is None else
+                    [np.array(em.text_features.features) for em in spec.test.data],
+                receiver_address=spec.train.receiver_address, serialize=1,
+                save_path=os.path.join(DEFAULTS.MODEL_PATH, spec.classifier_id + DEFAULTS.MODEL_EXT),
+                holdout_pct=spec.holdout_pct, learning_rate=spec.learning_rate, epochs=spec.epochs)
         else:
             classifier.train(
-                [get_content_as_str(em.url) if em.text is None else em.text for em in train.data],
-                [train.data.exclusive_targets, train.data.overlapping_targets] if classifier.overlapping_classes else
-                [train.data.exclusive_targets],
-                features=None if train.data[0].text_features is None else
-                [np.array(em.text_features.features) for em in train.data],
-                receiver_address=train.data.receiver_address, serialize=1,
-                save_path=os.path.join(DEFAULTS.TRAIN_PATH, train.classifier_id + DEFAULTS.TRAIN_EXT),
-                model_file=os.path.join(DEFAULTS.MODEL_PATH, train.classifier_id + DEFAULTS.MODEL_EXT),
-                holdout_pct=train.holdout_pct, learning_rate=train.learning_rate, epochs=train.epochs)
+                [get_content_as_str(em.url) if em.text is None else em.text for em in spec.train.data],
+                [spec.train.exclusive_targets, spec.train.overlapping_targets] if classifier.overlapping_classes else
+                [spec.train.exclusive_targets],
+                features=None if spec.train.data[0].text_features is None else
+                [np.array(em.text_features.features) for em in spec.train.data],
+                test_content=None if spec.test is None else
+                    [get_content_as_str(em.url) if em.text is None else em.text for em in spec.test.data],
+                test_targets=None if spec.test is None else
+                    [spec.test.exclusive_targets, spec.test.overlapping_targets] if classifier.overlapping_classes else
+                    [spec.test.exclusive_targets],
+                test_features=None if spec.test is None or spec.test.data[0].text_features is None else
+                    [np.array(em.text_features.features) for em in spec.test.data],
+                serialize=1, save_path=os.path.join(DEFAULTS.MODEL_PATH, spec.classifier_id + DEFAULTS.MODEL_EXT),
+                holdout_pct=spec.holdout_pct, learning_rate=spec.learning_rate, epochs=spec.epochs)
 
         # store current epoch in return and update metadata
         classifier_info.epoch = classifier.neuralnet.epoch_index
-        with open(os.path.join(DEFAULTS.META_PATH, train.classifier_id + DEFAULTS.META_EXT), 'w') as f:
+        with open(os.path.join(DEFAULTS.META_PATH, spec.classifier_id + DEFAULTS.META_EXT), 'w') as f:
             f.write(json.dumps(classifier_info.__dict__))
 
-        return classifier_info
+        return TrainClassifier(classifier_info=classifier_info)
 
 
 class DeleteClassifier(graphene.Mutation):
