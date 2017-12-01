@@ -26,7 +26,6 @@ Jinja2==2.10
 lazy-object-proxy==1.3.1
 MarkupSafe==1.0
 mccabe==0.5.3
--e git+https://github.com/NervanaSystems/neon.git@9eb09d79cb65c4854db9f5d0140ad7a8e247359e#egg=neon
 pandas==0.21.0
 pep8==1.7.0
 Pillow==3.3.1
