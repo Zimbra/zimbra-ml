@@ -79,17 +79,18 @@ class EmailClassifier(object):
             self.zero_tensors = [self.be.zeros((1, num_subject_words + num_body_words, self.wordvec_dimensions))]
             self.zeros = self.zero_tensors[0][:, 0, :].get()[0]
 
+        # use mutli-cost metric if we have both exclusive and overlapping classes
+        if overlapping_classes is None:
+            self.cost = GeneralizedCost(CrossEntropyMulti())
+        else:
+            self.cost = Multicost([GeneralizedCost(SumSquared()), GeneralizedCost(CrossEntropyMulti())])
+
         # don't add an analytics tensor if we're content only
         if num_analytics_features > 0:
             self.zero_tensors += [self.be.zeros((num_analytics_features, 1))]
-
-        # only add an overlapping classifier if needed
-        if overlapping_classes is None:
-            self.cost = GeneralizedCost(CrossEntropyMulti())
-            self.neuralnet.initialize(self.zero_tensors[0].shape, cost=self.cost)
-        else:
-            self.cost = Multicost([GeneralizedCost(SumSquared()), GeneralizedCost(CrossEntropyMulti())])
             self.neuralnet.initialize([t.shape for t in self.zero_tensors], cost=self.cost)
+        else:
+            self.neuralnet.initialize(self.zero_tensors[0].shape, cost=self.cost)
 
     def fit(self, dataset, optimizer, num_epochs, callbacks):
         self.neuralnet.fit(dataset, self.cost, optimizer, num_epochs, callbacks)
