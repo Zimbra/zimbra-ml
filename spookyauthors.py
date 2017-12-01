@@ -15,7 +15,7 @@ import json
 
 class SpookyAuthors:
     classifier_id = 'fef28da2-0d26-4e68-a383-6ad195910de4'
-    training_epochs = 8
+    training_epochs = 4
     epoch = 0
     args = None
     classes = None
@@ -23,7 +23,7 @@ class SpookyAuthors:
     @staticmethod
     def instantiate_classifier():
         query = {'query': 'query {classifier(' +
-                          'classifierId:{} '.format('"' + sa.classifier_id + '"') +
+                          'classifierId:{} '.format(json.dumps(sa.classifier_id)) +
                           ') { classifierId vocabPath numSubjectWords numBodyWords numFeatures '
                           'exclusiveClasses overlappingClasses epoch }}'}
         response = requests.post(sa.args.apiurl.rstrip('/'), json=query)
@@ -45,7 +45,9 @@ class SpookyAuthors:
     def create_classifier():
         mutation = {'query': 'mutation {createClassifier(classifierSpec:{ ' +
                              'classifierId:{} '.format(json.dumps(sa.classifier_id)) +
-                             'numSubjectWords:0 numBodyWords:60 numFeatures:0 ' +
+                             'numSubjectWords:0 numBodyWords:60 numFeatures:0 vocabPath:"{}" '.format(
+                                 sa.args.vocab
+                             ) +
                              'exclusiveClasses:[{}]'.format(
                                  ' '.join([json.dumps(s) for s in sa.classes])) +
                              ' }) {classifierInfo { classifierId }}}'}
@@ -63,14 +65,16 @@ class SpookyAuthors:
         train.sort_index(inplace=True)
         exclusive_targets = [train['author'].ix[k] for k in train.index]
 
-        mutation = {'query': 'mutation {trainClassifier(spec: { classifierId: "' + sa.classifier_id + '" ' +
-                             'train: {data: [' +
+        mutation = {'query': 'mutation {trainClassifier(spec: { classifierId:' + json.dumps(sa.classifier_id) +
+                             ' train: {data: [' +
                              ' '.join(['{url:"' + train['id'].ix[k] + '" text:' + json.dumps(train['text'].ix[k]) + '}'
                                        for k in train.index]) +
                              '] exclusiveTargets: [' +
                              ' '.join(['"' + s + '"' for s in exclusive_targets]) +
                              '] } epochs: ' + str(epochs) +
-                             ' holdoutPct: 0.1}) { classifierInfo { classifierId exclusiveClasses epoch }}}'}
+                             ' learningRate: {}'.format(sa.args.learning_rate) +
+                             ' holdoutPct: 0.1 }) '
+                             '{ classifierInfo { classifierId exclusiveClasses epoch }}}'}
 
         response = requests.post(sa.args.apiurl.rstrip('/'), json=mutation)
 
@@ -123,6 +127,10 @@ def main():
                    help='Delete the classifier and create a new one to retrain.')
     p.add_argument('--epochs', type=int, default=5,
                    help='Total number of epochs the model should be trained, including those already done.')
+    p.add_argument('--vocab', type=str, default='glove.6B.300d.txt',
+                   help='Vocabulary file without directory location to use as word vectors.')
+    p.add_argument('--learning_rate', type=float, default=0.001,
+                   help='Learning rate for the Adam optimizer.')
 
     sa.args = p.parse_args()
 

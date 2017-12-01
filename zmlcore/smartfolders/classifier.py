@@ -122,7 +122,10 @@ class EmailClassifier(object):
                 for line in f:
                     if len(line) > 0:
                         tokens = line.split()
-                        vocab[tokens[0]] = np.array(tokens[1:], dtype=np.float64)
+                        try:
+                            vocab[tokens[0]] = np.array(tokens[1:], dtype=np.float32)
+                        except Exception as e:
+                            print('Failed to load word vector: {}'.format(line))
                 self.wordvec_dimensions = len(tokens) - 1
             print('loaded successfully')
             _vocabularies[vocab_path] = vocab

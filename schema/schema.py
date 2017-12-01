@@ -192,7 +192,7 @@ class TrainingSpec(graphene.InputObjectType):
     test = TrainingData(default_value=None)
     epochs = graphene.Int(description='Number of epochs to train with the data passed. If the classifier is already '
                                       'trained, this will add epochs to its training', default_value=5)
-    learning_rate = graphene.String(description='The learning rate for training.', default_value=0.001)
+    learning_rate = graphene.Float(description='The learning rate for training.', default_value=0.001)
     holdout_pct = graphene.Float(description='A percentage of the training data to randomly hold back from training '
                                              'and use to measure progress as well as prevent overfitting.',
                                  default_value=0.0)
