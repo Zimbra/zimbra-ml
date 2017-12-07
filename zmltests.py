@@ -93,7 +93,7 @@ if __name__ == '__main__':
 
     if options.sentiment_path:
         classifier = EmailClassifier(options.word_vectors, options.model_file, optimizer=optimizer,
-                                     num_analytics_features=0 if options.sentiment_path else 4,
+                                     num_analytics_features=0, num_body_words=88,
                                      overlapping_classes=overlapping_classes, exclusive_classes=exclusive_classes,
                                      network_type=options.network_type)
 

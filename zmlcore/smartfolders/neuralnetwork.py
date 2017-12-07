@@ -41,10 +41,8 @@ class ClassifierNetwork(Model):
             output_branch = BranchNode(name='exclusive_overlapping')
             output_layers = Tree([[SkipNode(),
                                    output_branch,
-                                   Affine(20, init, activation=activation),
                                    Affine(len(self.exclusive_classes), init, activation=Softmax())],
                                   [output_branch,
-                                   Affine(20, init, activation=activation),
                                    Affine(len(self.overlapping_classes), init, activation=Logistic())]])
         layers = [input_layers,
                   # this is where inputs meet, and where we may want to add depth or
@@ -103,8 +101,7 @@ class ClassifierNetwork(Model):
             return [
                 Conv((2, self.width, self.width), padding={'pad_h': 1, 'pad_w': 0},
                      init=init, activation=activation),
-                Noise(noise_pct_std=0.1),
-                Dropout(keep=0.875),
+                Dropout(keep=0.6),
                 Conv((3, 1, 80), padding={'pad_h': 1, 'pad_w': 0}, init=init, activation=activation),
                 Dropout(keep=0.925),
                 Conv((4, 1, 100), padding={'pad_h': 1, 'pad_w': 0}, init=init, activation=activation),
