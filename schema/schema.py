@@ -4,7 +4,12 @@ created: 11/1/2017, Michael Toutonghi
 
 GraphQL schema for the Zimbra email and text classification micro-service.
 
-The general idea is that
+The general idea is that operations revolve around classifiers. Classifiers take text or email content and floating
+point features, as well as labels for training, and either train using a dataset to create a model, or classify.
+
+Classifiers can be created, trained, used for classification and deleted.
+Training sets can be created through a training operation with persist, used for training, and deleted.
+Models can be created by training and deleted.
 
 """
 import os
