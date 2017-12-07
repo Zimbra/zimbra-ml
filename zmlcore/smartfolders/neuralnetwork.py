@@ -8,11 +8,9 @@ to the user account as analytics, as well as any other features that may be usef
 """
 from neon.models.model import Model
 from neon.layers import MergeMultistream, LSTM, Affine, RecurrentSum, Tree, BranchNode, SkipNode, Conv, Dropout
-from neon.layers import MergeBroadcast
 from neon.initializers import GlorotUniform, Kaiming
 from neon.optimizers import Adam
 from neon.transforms import Softmax, Logistic, Rectlin
-from zmlcore.licensed.layers import Noise
 
 class ClassifierNetwork(Model):
     def __init__(self, overlapping_classes=None, exclusive_classes=None, analytics_input=True,
