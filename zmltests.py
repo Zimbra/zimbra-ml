@@ -67,7 +67,7 @@ if __name__ == '__main__':
                    'maildir format, along with ground truth columns based on finding the classes in the folder names')
     p.add_argument('--results_path', type=str, required=False, default='./data/results.csv',
                    help='The path where a CSV file with email keys and classifications will be written')
-    p.add_argument('--learning_rate', type=float, required=False, default=0.0005,
+    p.add_argument('--learning_rate', type=float, required=False, default=0.001,
                    help='Set learning rate for neural networks')
     options = p.parse_args(gen_be=False)
 
