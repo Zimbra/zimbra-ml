@@ -7,4 +7,9 @@ query {classifier(classifierId:"") {
   exclusiveClasses
   overlappingClasses
   epoch
+  trainingSet {
+    date
+    numTrain
+    numTest
+  }
 }}

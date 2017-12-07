@@ -11,12 +11,17 @@ import os
 import graphene
 import urllib3
 import numpy as np
+import pickle
 from zmlcore.smartfolders.classifier import EmailClassifier
 import uuid
 import email
 import json
 from concurrent.futures import ThreadPoolExecutor
+import pytz
+import datetime
 
+
+_version = '0.0.1'
 
 class DEFAULTS:
     MODEL_PATH = 'data/models/'
@@ -24,7 +29,7 @@ class DEFAULTS:
     VOCAB_PATH = 'data/vocabularies/'
     VOCAB_FILE = 'glove.6B.100d.txt'
     META_PATH = 'data/meta/'
-    TRAIN_PATH = 'data/meta/'
+    TRAIN_PATH = 'data/train/'
     META_EXT = '.zml'
     TRAIN_EXT = '.train'
     OVERLAPPING = None
@@ -53,6 +58,45 @@ def get_content_as_str(path):
     else:
         with open(path, 'r') as f:
             return f.read()
+
+
+def naive_local_to_naive_utc(dt, local_zone):
+    if isinstance(local_zone, str):
+        local_zone = pytz.timezone(local_zone)
+    return local_zone.localize(dt).astimezone(pytz.utc).replace(tzinfo=None)
+
+
+def datetime_as_datastring(dt):
+    assert isinstance(dt, datetime.datetime)
+    return dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+
+
+def save_classifier_info(classifier_info):
+    d = classifier_info.__dict__.copy()
+    d['training_set'] = None if classifier_info.training_set is None else classifier_info.training_set.__dict__
+    with open(os.path.join(DEFAULTS.META_PATH, classifier_info.classifier_id + DEFAULTS.META_EXT), 'w') as f:
+        f.write(json.dumps(d))
+
+
+def load_classifier_info(classifier_id):
+    try:
+        with open(os.path.join(DEFAULTS.META_PATH,
+                               classifier_id + DEFAULTS.META_EXT), 'r') as f:
+            c_dict = json.loads(f.read())
+            c_info = ClassifierInfo(classifier_id=classifier_id,
+                                    vocab_path=c_dict['vocab_path'],
+                                    exclusive_classes=c_dict['exclusive_classes'],
+                                    overlapping_classes=c_dict['overlapping_classes'],
+                                    num_features=c_dict['num_features'],
+                                    num_subject_words=c_dict['num_subject_words'],
+                                    num_body_words=c_dict['num_body_words'],
+                                    epoch=c_dict['epoch'],
+                                    training_set=None if c_dict.get('training_set', None) is None else
+                                    TrainingSetInfo(**c_dict['training_set']))
+            return c_info
+
+    except FileNotFoundError:
+        raise FileNotFoundError('Classifier {} not found'.format(classifier_id))
 
 
 class OverlappingClassification(graphene.ObjectType):
@@ -161,6 +205,36 @@ class ClassifierSpec(graphene.InputObjectType):
                                         default_value=DEFAULTS.OVERLAPPING)
 
 
+class TrainingSpec(graphene.InputObjectType):
+    class Meta:
+        description = 'Everything needed to identify and train a classifier, including number of epochs ' \
+                      'and learning rate.'
+    classifier_id = graphene.String(description='Valid ID of an instantiated classifier.')
+    persist = graphene.Boolean(description='If true, this training set and any holdout set split randomly from it '
+                                           'will be persisted across multiple training sessions. This requires '
+                                           'server storage, but can save network traffic and allow training progress '
+                                           'and testing on one common holdout set over time.', default_value=False)
+    train = TrainingData(description='If this is None, the classifier must have a valid, persisted training set.',
+                         default_value=None)
+    test = TrainingData(default_value=None)
+    epochs = graphene.Int(description='Number of epochs to train with the data passed. If the classifier is already '
+                                      'trained, this will add epochs to its training', default_value=5)
+    learning_rate = graphene.Float(description='The learning rate for training.', default_value=0.001)
+    holdout_pct = graphene.Float(description='A percentage of the training data to randomly hold back from training '
+                                             'and use to measure progress as well as prevent overfitting.',
+                                 default_value=0.0)
+
+
+class TrainingSetInfo(graphene.ObjectType):
+    class Meta:
+        description = 'Information about a persisted training set that enables one common holdout set to be' \
+                      'used repeatedly across separate training sessions'
+    date = graphene.String(description='The date and time in UTC format that this training set was persisted.')
+    num_train = graphene.Int(description='The number of training samples in this training set', default_value=0)
+    num_test = graphene.Int(description='The number of test samples in the holdout/test set for validation',
+                            default_value=0)
+
+
 class ClassifierInfo(graphene.ObjectType):
     class Meta:
         description = 'Return information about an instantiated classifier, including ID and epoch.'
@@ -181,21 +255,7 @@ class ClassifierInfo(graphene.ObjectType):
                                                     'trained or considered in a trained classifier.')
     epoch = graphene.Int(description='The number of separate epochs of training this classifer has already had.',
                          default_value=0)
-
-
-class TrainingSpec(graphene.InputObjectType):
-    class Meta:
-        description = 'Everything needed to identify and train a classifier, including number of epochs ' \
-                      'and learning rate.'
-    classifier_id = graphene.String(description='Valid ID of an instantiated classifier.')
-    train = TrainingData()
-    test = TrainingData(default_value=None)
-    epochs = graphene.Int(description='Number of epochs to train with the data passed. If the classifier is already '
-                                      'trained, this will add epochs to its training', default_value=5)
-    learning_rate = graphene.Float(description='The learning rate for training.', default_value=0.001)
-    holdout_pct = graphene.Float(description='A percentage of the training data to randomly hold back from training '
-                                             'and use to measure progress as well as prevent overfitting.',
-                                 default_value=0.0)
+    training_set = graphene.Field(TrainingSetInfo, default_value=None)
 
 
 class ClassifierQuery(graphene.ObjectType):
@@ -235,21 +295,8 @@ class ClassifierQuery(graphene.ObjectType):
 
         classifiers = []
         for fn in c_files:
-            with open(os.path.join(DEFAULTS.META_PATH, fn), 'r') as f:
-                c_dict = json.loads(f.read())
+            classifiers.append(load_classifier_info(fn.split('.')[0]))
 
-            classifiers.append(
-                ClassifierInfo(
-                    classifier_id = fn.split('.')[0],
-                    vocab_path = c_dict['vocab_path'],
-                    exclusive_classes = c_dict['exclusive_classes'],
-                    overlapping_classes = c_dict['overlapping_classes'],
-                    num_features = c_dict['num_features'],
-                    num_subject_words = c_dict['num_subject_words'],
-                    num_body_words = c_dict['num_body_words'],
-                    epoch = c_dict['epoch']
-                )
-            )
         return classifiers
 
     @staticmethod
@@ -267,20 +314,15 @@ class ClassifierQuery(graphene.ObjectType):
     @staticmethod
     def _resolve_classifier(root, info, classifier_id):
         """
-        load or create a classifier and return information about it
+        load n existing classifier and return information about it
         :param root:
         :param info:
         :param classifier_id:
         :return:
         """
-        try:
-            with open(os.path.join(DEFAULTS.META_PATH,
-                                   classifier_id + DEFAULTS.META_EXT), 'r') as f:
-                c_dict = json.loads(f.read())
+        c_dict = load_classifier_info(classifier_id).__dict__
 
-        except FileNotFoundError:
-            raise FileNotFoundError('Classifier {} not found'.format(classifier_id))
-
+        # now check to see if it is instantiated as well
         c_info = _global_classifier_info.get(classifier_id, None)
         if c_info is None:
             classifier = EmailClassifier(os.path.join(DEFAULTS.VOCAB_PATH, c_dict['vocab_path']),
@@ -301,7 +343,8 @@ class ClassifierQuery(graphene.ObjectType):
                                     num_features=c_dict['num_features'],
                                     num_subject_words=c_dict['num_subject_words'],
                                     num_body_words=c_dict['num_body_words'],
-                                    epoch=classifier.neuralnet.epoch_index)
+                                    epoch=classifier.neuralnet.epoch_index,
+                                    training_set=c_dict['training_set'])
 
             _global_classifier_info[classifier_id] = c_info
 
@@ -352,6 +395,7 @@ class ClassifierQuery(graphene.ObjectType):
 class CreateClassifier(graphene.Mutation):
     class Meta:
         description = 'This mutation is used to create and instantiate a new classifier.'
+
     class Arguments:
         classifier_spec = ClassifierSpec()
 
@@ -402,76 +446,102 @@ class CreateClassifier(graphene.Mutation):
                                                           overlapping_classes=classifier_spec.overlapping_classes,
                                                           epoch=classifier.neuralnet.epoch_index)
 
-        with open(os.path.join(DEFAULTS.META_PATH, classifier_spec.classifier_id + DEFAULTS.META_EXT), 'x') as f:
-            f.write(json.dumps(CreateClassifier.classifier_info.__dict__))
-
+        save_classifier_info(CreateClassifier.classifier_info)
         _global_classifier_info[classifier_spec.classifier_id] = CreateClassifier.classifier_info
-
         return CreateClassifier(classifier_info=CreateClassifier.classifier_info)
 
 
 class TrainClassifier(graphene.Mutation):
     class Meta:
         description = 'This mutation is used to train an already created classifier.'
+
     class Arguments:
-        spec = TrainingSpec()
+        training_spec = TrainingSpec(description='A specification of this training session')
 
     classifier_info = graphene.Field(ClassifierInfo)
 
     @staticmethod
-    def mutate(root, info, spec):
+    def mutate(root, info, training_spec):
         return _global_classifier_threads.submit(TrainClassifier._mutate,
-                                                 root, info, spec).result()
+                                                 root, info, training_spec).result()
 
     @staticmethod
-    def _mutate(root, info, spec):
-        classifier_info = ClassifierQuery._resolve_classifier(root, info, spec.classifier_id)
+    def _mutate(root, info, training_spec):
+        classifier_info = ClassifierQuery._resolve_classifier(root, info, training_spec.classifier_id)
 
         # if we failed to load, we would throw an exception past here
-        classifier = _global_classifiers[spec.classifier_id]
+        classifier = _global_classifiers[training_spec.classifier_id]
         assert isinstance(classifier, EmailClassifier)
 
-        # load content for training, if necessary
-        if isinstance(spec.train.data[0], EmailMessage):
-            classifier.train(
-                [email.message_from_bytes(get_content_as_str(em.url)) if em.text is None else
-                 email.message_from_string(em.text) for em in spec.train.data],
-                [spec.train.exclusive_targets, spec.train.overlapping_targets] if classifier.overlapping_classes else
-                [spec.train.exclusive_targets],
-                features=None if spec.train.data[0].text_features is None else
-                [np.array(em.text_features.features) for em in spec.train.data],
-                test_content=None if spec.test is None else
-                    [email.message_from_bytes(get_content_as_str(em.url)) if em.text is None else
-                     email.message_from_string(em.text) for em in spec.test.data],
-                test_targets=None if spec.test is None else
-                    [spec.test.exclusive_targets, spec.test.overlapping_targets] if classifier.overlapping_classes else
-                    [spec.test.exclusive_targets],
-                test_features=None if spec.test is None or spec.test.data[0].text_features is None else
-                    [np.array(em.text_features.features) for em in spec.test.data],
-                receiver_address=spec.train.receiver_address, serialize=1,
-                save_path=os.path.join(DEFAULTS.MODEL_PATH, spec.classifier_id + DEFAULTS.MODEL_EXT),
-                holdout_pct=spec.holdout_pct, learning_rate=spec.learning_rate, epochs=spec.epochs)
+        if training_spec.train is None:
+            # either we have a persisted training set, or we throw an error
+            if classifier_info.training_set is None:
+                raise ValueError('train data is null and there is no persisted training set.')
+
+            with open(os.path.join(DEFAULTS.TRAIN_PATH, training_spec.classifier_id + DEFAULTS.TRAIN_EXT), 'rb') as f:
+                training_data = pickle.load(f)
+
+            if training_data['version'] != _version:
+                raise ValueError('persisted training data is incorrect format. please delete and recreate classifier.')
+
+            (train_x, train_y) = training_data['train']
+            (test_x, test_y) = training_data['test']
         else:
-            classifier.train(
-                [get_content_as_str(em.url) if em.text is None else em.text for em in spec.train.data],
-                [spec.train.exclusive_targets, spec.train.overlapping_targets] if classifier.overlapping_classes else
-                [spec.train.exclusive_targets],
-                features=None if spec.train.data[0].text_features is None else
-                [np.array(em.text_features.features) for em in spec.train.data],
-                test_content=None if spec.test is None else
-                    [get_content_as_str(em.url) if em.text is None else em.text for em in spec.test.data],
-                test_targets=None if spec.test is None else
-                    [spec.test.exclusive_targets, spec.test.overlapping_targets] if classifier.overlapping_classes else
-                    [spec.test.exclusive_targets],
-                test_features=None if spec.test is None or spec.test.data[0].text_features is None else
-                    [np.array(em.text_features.features) for em in spec.test.data],
-                serialize=1, save_path=os.path.join(DEFAULTS.MODEL_PATH, spec.classifier_id + DEFAULTS.MODEL_EXT),
-                holdout_pct=spec.holdout_pct, learning_rate=spec.learning_rate, epochs=spec.epochs)
+            # load content for training, if necessary
+            if isinstance(training_spec.train.data[0], EmailMessage):
+                train_x, train_y, test_x, test_y = classifier.gen_training_set(
+                    [email.message_from_bytes(get_content_as_str(em.url)) if em.text is None else
+                     email.message_from_string(em.text) for em in training_spec.train.data],
+                    [training_spec.train.exclusive_targets, training_spec.train.overlapping_targets] if classifier.overlapping_classes else
+                    [training_spec.train.exclusive_targets],
+                    features=None if training_spec.train.data[0].text_features is None else
+                    [np.array(em.text_features.features) for em in training_spec.train.data],
+                    test_content=None if training_spec.test is None else
+                        [email.message_from_bytes(get_content_as_str(em.url)) if em.text is None else
+                         email.message_from_string(em.text) for em in training_spec.test.data],
+                    test_targets=None if training_spec.test is None else
+                        [training_spec.test.exclusive_targets, training_spec.test.overlapping_targets] if classifier.overlapping_classes else
+                        [training_spec.test.exclusive_targets],
+                    test_features=None if training_spec.test is None or training_spec.test.data[0].text_features is None else
+                        [np.array(em.text_features.features) for em in training_spec.test.data],
+                    receiver_address=training_spec.train.receiver_address, holdout_pct=training_spec.holdout_pct)
+            else:
+                train_x, train_y, test_x, test_y = classifier.gen_training_set(
+                    [get_content_as_str(em.url) if em.text is None else em.text for em in training_spec.train.data],
+                    [training_spec.train.exclusive_targets, training_spec.train.overlapping_targets] if classifier.overlapping_classes else
+                    [training_spec.train.exclusive_targets],
+                    features=None if training_spec.train.data[0].text_features is None else
+                    [np.array(em.text_features.features) for em in training_spec.train.data],
+                    test_content=None if training_spec.test is None else
+                        [get_content_as_str(em.url) if em.text is None else em.text for em in training_spec.test.data],
+                    test_targets=None if training_spec.test is None else
+                        [training_spec.test.exclusive_targets, training_spec.test.overlapping_targets] if classifier.overlapping_classes else
+                        [training_spec.test.exclusive_targets],
+                    test_features=None if training_spec.test is None or training_spec.test.data[0].text_features is None else
+                        [np.array(em.text_features.features) for em in training_spec.test.data],
+                    holdout_pct=training_spec.holdout_pct)
+
+                if training_spec.persist:
+                    classifier_info.training_set = \
+                        TrainingSetInfo(date=datetime_as_datastring(datetime.datetime.utcnow()),
+                                        num_train=len(train_y[0]),
+                                        num_test=0 if test_y is None else len(test_y[0]))
+
+                    save_classifier_info(classifier_info)
+
+                    with open(os.path.join(DEFAULTS.TRAIN_PATH,
+                                           training_spec.classifier_id + DEFAULTS.TRAIN_EXT), 'wb') as f:
+                        pickle.dump({'version': _version,
+                                     'train': (train_x, train_y),
+                                     'test': (test_x, test_y)}, f)
+
+        classifier.train(train_x, train_y, test_content=test_x, test_targets=test_y, serialize=1,
+                         save_path=os.path.join(DEFAULTS.MODEL_PATH, training_spec.classifier_id + DEFAULTS.MODEL_EXT),
+                         learning_rate=training_spec.learning_rate, epochs=training_spec.epochs)
 
         # store current epoch in return and update metadata
         classifier_info.epoch = classifier.neuralnet.epoch_index
-        with open(os.path.join(DEFAULTS.META_PATH, spec.classifier_id + DEFAULTS.META_EXT), 'w') as f:
-            f.write(json.dumps(classifier_info.__dict__))
+        save_classifier_info(classifier_info)
 
         return TrainClassifier(classifier_info=classifier_info)
 
@@ -522,10 +592,76 @@ class DeleteClassifier(graphene.Mutation):
         return DeleteClassifier(result='OK')
 
 
+class DeleteTrainSet(graphene.Mutation):
+    class Meta:
+        description = 'This deletes the training set for an existing classifier ' \
+                      'to reduce its storage if the training set will not be used again. This leaves any ' \
+                      'trained models and classifier itself intact.'
+    class Arguments:
+        classifier_id = graphene.String(description='ID of the classifier from which to delete the training set.')
+
+    result = graphene.String(description='Return code for delete operation. Success == "OK"')
+
+    @staticmethod
+    def mutate(root, info, classifier_id):
+        return _global_classifier_threads.submit(DeleteTrainSet._mutate,
+                                                 root, info, classifier_id).result()
+
+    @staticmethod
+    def _mutate(root, info, classifier_id):
+        try:
+            # get classifier info to remove the reference
+            classifier_info = ClassifierQuery._resolve_classifier(root, info, classifier_id)
+            classifier_info.training_set = None
+            save_classifier_info(classifier_info)
+        except KeyError:
+            pass
+
+        try:
+            os.remove(os.path.join(DEFAULTS.TRAIN_PATH, classifier_id + DEFAULTS.TRAIN_EXT))
+        except FileNotFoundError:
+            pass
+
+        return DeleteTrainSet(result='OK')
+
+
+class DeleteModels(graphene.Mutation):
+    class Meta:
+        description = 'This deletes any trained models for an existing classifier, but leaves the classifier' \
+                      'and any existing training set in place.'
+    class Arguments:
+        classifier_id = graphene.String(description='ID of the classifier from which to delete the training set.')
+
+    result = graphene.String(description='Return code for delete operation. Success == "OK"')
+
+    @staticmethod
+    def mutate(root, info, classifier_id):
+        return _global_classifier_threads.submit(DeleteModels._mutate,
+                                                 root, info, classifier_id).result()
+
+    @staticmethod
+    def _mutate(root, info, classifier_id):
+        # remove classifier if it is in memory
+        try:
+            del _global_classifiers[classifier_id]
+            del _global_classifier_info[classifier_id]
+        except KeyError:
+            pass
+
+        try:
+            os.remove(os.path.join(DEFAULTS.MODEL_PATH, classifier_id + DEFAULTS.MODEL_EXT))
+        except FileNotFoundError:
+            pass
+
+        return DeleteModels(result='OK')
+
+
 class Mutations(graphene.ObjectType):
     create_classifier = CreateClassifier.Field()
     train_classifier = TrainClassifier.Field()
     delete_classifier = DeleteClassifier.Field()
+    delete_train_set = DeleteTrainSet.Field()
+    delete_models = DeleteModels.Field()
 
 
 class ObserveClassifier(graphene.ObjectType):
@@ -535,7 +671,7 @@ class ObserveClassifier(graphene.ObjectType):
     place_holder = graphene.Int()
 
     def resolve_place_holder(root, info):
-        pass
+        raise NotImplementedError()
 
 
 def main():

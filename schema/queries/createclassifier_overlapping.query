@@ -1,0 +1,8 @@
+mutation {createClassifier(classifierSpec:{overlappingClasses=["important"]}) {classifierInfo {
+  classifierId
+  vocabPath
+  numSubjectWords
+  numBodyWords
+  numFeatures
+  epoch
+}}}

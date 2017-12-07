@@ -23,5 +23,4 @@ def fix_logistic_cpu(be):
         numpy_call_dict['sig'] = lambda left: expit(left)
 
 def fix_logistic(be):
-    # TODO: we need to support GPU and sig2, which also numerically unstable
     fix_logistic_cpu(be)

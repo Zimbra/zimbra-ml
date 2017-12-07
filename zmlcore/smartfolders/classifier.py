@@ -27,9 +27,12 @@ import numpy as np
 from .neuralnetwork import ClassifierNetwork
 from neon.layers import Multicost, GeneralizedCost
 from neon.transforms import CrossEntropyMulti, SumSquared
-from neon.transforms.cost import MultiMetric, Misclassification, LogLoss
+from neon.transforms.cost import MultiMetric, Misclassification
 from neon.callbacks.callbacks import Callbacks
 from neon.optimizers import Adam
+from neon.backends import gen_backend
+from neon.util.argparser import extract_valid_args
+from zmlcore.neonfixes.transforms import fix_logistic
 from bs4 import BeautifulSoup
 from bs4.element import Comment
 from collections import deque
@@ -38,8 +41,25 @@ import base64
 import re
 import uuid
 from zmlcore.data.dataiterator import BatchIterator
+from zmlcore.smartfolders.traincallbacks import MisclassificationTest, GCCallback
 
 _vocabularies = {}
+class Config:
+    options = None
+    initialized = False
+
+    @staticmethod
+    def initialize_neon():
+        # for now, we don't trust the mkl backend
+        if Config.options.backend == 'mkl':
+            print('Resetting mkl backend to cpu')
+            Config.options.backend = 'cpu'
+
+        be = gen_backend(**extract_valid_args(Config.options, gen_backend))
+        # patch a fix to stabilize the CPU version of Neon's logistic function
+        fix_logistic(be)
+        Config.initialized = True
+
 
 class EmailClassifier(object):
     def __init__(self, vocab_path, model_path, optimizer=Adam(), overlapping_classes=None, exclusive_classes=None,
@@ -59,38 +79,61 @@ class EmailClassifier(object):
         self.num_words = num_subject_words + num_body_words
         self.class_threshold = class_threshold
 
-        self.neuralnet = ClassifierNetwork(overlapping_classes=overlapping_classes,
-                                           exclusive_classes=exclusive_classes,
-                                           optimizer=optimizer, network_type=network_type,
-                                           analytics_input=False if num_analytics_features == 0 else True,
-                                           num_words=self.num_words, width=self.wordvec_dimensions)
+        self.exclusive_classes = exclusive_classes
+        self.overlapping_classes = overlapping_classes
 
-        if not model_path is None:
+        self.neuralnet_params = {'overlapping_classes':overlapping_classes,
+                                 'exclusive_classes':exclusive_classes,
+                                 'optimizer':optimizer, 'network_type':network_type,
+                                 'analytics_input':False if num_analytics_features == 0 else True,
+                                 'num_words':self.num_words, 'width':self.wordvec_dimensions}
+
+        self.model_path = model_path
+        self.network_type = network_type
+        self.num_features = num_analytics_features
+
+        self.neuralnet = None
+        self.initialize_neural_network()
+
+    def initialize_neural_network(self):
+        """
+        We put this in to replace the backend with a new one in hopes of clearing the memory used by
+        Intel's Neon backend between epochs. It should allow us to replace backends for other reasons, such as
+        changing batch size or CPU/GPU as well.
+        :return:
+        """
+        Config.initialize_neon()
+
+        self.neuralnet = ClassifierNetwork(**self.neuralnet_params)
+
+        if not self.model_path is None:
             try:
-                self.neuralnet.load_params(model_path)
+                self.neuralnet.load_params(self.model_path)
+                print('model loaded at epoch {}'.format(self.neuralnet.epoch_index))
             except Exception as e:
-                print('{}:{} - cannot load model file {}'.format(type(e), e, model_path))
+                print('{}:{} - cannot load model file {}'.format(type(e), e, self.model_path))
 
-        if network_type == 'lstm':
-            self.zero_tensors = [self.be.zeros((self.wordvec_dimensions, num_subject_words + num_body_words))]
+        if self.network_type == 'lstm':
+            self.zero_tensors = [self.be.zeros((self.wordvec_dimensions, self.num_words))]
             self.zeros = self.zero_tensors[0][:, 0].get()
             self.zeros = self.zeros.reshape((len(self.zeros)))
         else:
-            self.zero_tensors = [self.be.zeros((1, num_subject_words + num_body_words, self.wordvec_dimensions))]
+            self.zero_tensors = [self.be.zeros((1, self.num_words, self.wordvec_dimensions))]
             self.zeros = self.zero_tensors[0][:, 0, :].get()[0]
 
         # use mutli-cost metric if we have both exclusive and overlapping classes
-        if overlapping_classes is None:
+        if self.overlapping_classes is None:
             self.cost = GeneralizedCost(CrossEntropyMulti())
         else:
             self.cost = Multicost([GeneralizedCost(SumSquared()), GeneralizedCost(CrossEntropyMulti())])
 
         # don't add an analytics tensor if we're content only
-        if num_analytics_features > 0:
-            self.zero_tensors += [self.be.zeros((num_analytics_features, 1))]
+        if self.num_features > 0:
+            self.zero_tensors += [self.be.zeros((self.num_features, 1))]
             self.neuralnet.initialize([t.shape for t in self.zero_tensors], cost=self.cost)
         else:
             self.neuralnet.initialize(self.zero_tensors[0].shape, cost=self.cost)
+
 
     def fit(self, dataset, optimizer, num_epochs, callbacks):
         self.neuralnet.fit(dataset, self.cost, optimizer, num_epochs, callbacks)
@@ -118,6 +161,7 @@ class EmailClassifier(object):
         else:
             print('loading word vectors from {} ... '.format(vocab_path), end='', flush=True)
             vocab = {}
+            failures = 0
             with open(vocab_path, 'r') as f:
                 tokens = []
                 for line in f:
@@ -126,19 +170,13 @@ class EmailClassifier(object):
                         try:
                             vocab[tokens[0]] = np.array(tokens[1:], dtype=np.float32)
                         except Exception as e:
-                            print('Failed to load word vector: {}'.format(line))
+                            failures += 1
                 self.wordvec_dimensions = len(tokens) - 1
-            print('loaded successfully')
+            if failures > 0:
+                print('failed to load {} word vectors... '.format(failures), end='')
+            print('loaded {} words successfully'.format(len(vocab)))
             _vocabularies[vocab_path] = vocab
         return vocab
-
-    @property
-    def overlapping_classes(self):
-        return self.neuralnet.overlapping_classes
-
-    @property
-    def exclusive_classes(self):
-        return self.neuralnet.exclusive_classes
 
     def tag_visible(self, element):
         if element.parent.name in ('style', 'script', 'head', 'title', 'meta', '[document]'):
@@ -331,32 +369,27 @@ class EmailClassifier(object):
 
         return classes[:len(content)]
 
-    def train(self, content, targets, features=None, test_content=None, test_targets=None, test_features=None,
-              receiver_address=None, serialize=0, save_path=None, holdout_pct=0.0, learning_rate=0.001, epochs=5):
+    def gen_training_set(self, content, targets, features=None, test_content=None,
+                         test_targets=None, test_features=None, receiver_address=None, holdout_pct=0.0):
         """
-
-        :param content: this comes in the form of either emails or plain text to train on
-        :param targets: this is either a list of one list of exclusive classes corresponding to each content sample, or
-        a list of two lists, that one, and a second that also corresponds to the training samples but with each
-        entry a list of overlapping class names
-        :param test_content: this enables separate test to be used for evaluation. if specified, holdout_pct is ignored
-        :param test_targets: ""
-        :param test_features: ""
-        :param features: features arte a list of float lists that can also be in string form, but will be converted
-        to arrays of floats that must be of the same length as the features specified when creating the classifier.
-        :param receiver_address: deprecated in favor of features, but left in for testing
-        :param serialize:
-        :param save_path:
-        :param model_file:
-        :param holdout_pct:
-        :param learning_rate:
-        :param epochs:
+        This takes text and text classes, as well as additional features, and an optional holdout percent, and
+        converts the input into numerical output that can be used for training.
+        :param content: list of email.message objects or strings of text
+        :param targets: one or two lists, depending on classifier of first exclusive class targets as strings, and
+        overlapping class targets as lists of strings, one per content item
+        :param features: additional features to input, depending on classifier for each content item
+        :param test_content: separate data for testing/validation after each epoch
+        :param test_targets: separate targets for testing
+        :param test_features: separate features for testing
+        :param receiver_address: optional global email address as a feature (legacy, should be deprecated)
+        :param holdout_pct: if test_content is None and this is between 0 and 1, a random holdout set will be
+        generated from the data for testing and validation.
         :return:
         """
         assert isinstance(content, list) and holdout_pct >= 0.0 and holdout_pct < 1.0 and not self.recurrent
 
         # if we also have overlapping targets, add them
-        have_ol = not self.neuralnet.overlapping_classes is None
+        have_ol = not self.overlapping_classes is None
 
         content = self.content_to_nn_representation(content, features=features, receiver_address=receiver_address)
         content[0] = content[0].reshape((len(content[0]) // self.num_words, 1, self.num_words, len(content[0][0])))
@@ -412,29 +445,58 @@ class EmailClassifier(object):
                 content = [np.take(c, train_idxs, axis=0) for c in content]
                 targets = [np.take(t, train_idxs, axis=0) for t in targets]
 
+        return content, targets, test_content, test_targets
+
+
+    def train(self, content, targets, test_content=None, test_targets=None, has_features=False,
+        serialize=0, save_path=None, learning_rate=0.001, epochs=5):
+        """
+
+        :param content: numerical content returned from gen_training_set
+        :param targets: numerical targets returned from gen_training_set
+        :param test_content: separate test set to be used for evaluation
+        :param test_targets: ""
+        :param test_features: ""
+        :param features: features arte a list of float lists that can also be in string form, but will be converted
+        to arrays of floats that must be of the same length as the features specified when creating the classifier.
+        :param receiver_address: deprecated in favor of features, but left in for testing
+        :param serialize:
+        :param save_path:
+        :param model_file:
+        :param holdout_pct:
+        :param learning_rate:
+        :param epochs:
+        :return:
+        """
+        # if we also have overlapping targets, add them
+        have_ol = not self.overlapping_classes is None
+
+        print('Training neural networks on {} samples for {} epochs.'.format(len(targets[0]), epochs))
+
         if not test_content is None and not test_targets is None:
             valid = BatchIterator(test_content,
                                   targets=test_targets,
-                                  steps=[1] if features is None else [1, 1])
+                                  steps=[1] if has_features else [1, 1])
         else:
             valid = None
 
         train = BatchIterator(content,
                               targets=targets,
-                              steps=[1] if features is None else [1, 1])
+                              steps=[1] if has_features else [1, 1])
 
         callbacks = Callbacks(self.neuralnet, train_set=train, multicost=have_ol,
                               metric=MultiMetric(Misclassification(), 0) if have_ol else Misclassification(),
-                              eval_freq=None if valid is None else 1, eval_set=valid,
-                              save_path=save_path, serialize=serialize)
+                              eval_freq=None if valid is None else 1, eval_set=valid)
+                              #save_path=save_path, serialize=serialize)
+        if serialize:
+            callbacks.add_save_best_state_callback(save_path)
 
-        print('Training neural networks on {} samples for {} epochs.'.format(len(targets[0]), epochs))
         metric = MultiMetric(Misclassification(), 0) if have_ol else Misclassification()
-        print('Starting misclassification error = {:.03}%'.format(
-            self.neuralnet.eval(valid, metric)[0] * 100))
+
+        if not valid is None:
+            print('Starting misclassification error = {:.03}%'.format(self.neuralnet.eval(valid, metric)[0] * 100))
+            callbacks.add_callback(MisclassificationTest(valid))
         self.fit(train, Adam(learning_rate=learning_rate), epochs, callbacks)
-        print('Post-training misclassification error = {:.03}%'.format(
-            self.neuralnet.eval(valid, metric)[0] * 100))
 
     def numeric_to_text_classes(self, classes):
         """

@@ -16,7 +16,7 @@ from neon.optimizers import Adam
 from neon.callbacks.callbacks import Callbacks, TrainMulticostCallback
 from neon.transforms.cost import Misclassification
 from zmlcore.neonfixes.multimetric import MultiMetric
-from zmlcore.smartfolders.classifier import EmailClassifier
+from zmlcore.smartfolders.classifier import EmailClassifier, Config
 from zmlcore.smartfolders.traincallbacks import TrainingProgress, MisclassificationTest
 from zmlcore.data.dataiterator import TrainingIterator, BatchIterator
 from zmlcore.data.sentiment_loader import SentimentLoader
@@ -28,7 +28,7 @@ holdout_pct = 0.1
 
 if __name__ == '__main__':
     p = NeonArgparser(__doc__)
-    p.add_argument('--word_vectors', type=str, required=False, default='./data/glove.6B.100d.txt',
+    p.add_argument('--word_vectors', type=str, required=False, default='./data/vocabularies/glove.6B.300d.txt',
                    help='Path to word vector file, including word, followed by vector per line, space separated')
     p.add_argument('--exclusive_classes', type=str, required=False,
                    default='\"finance promos social forums updates\"',
@@ -49,7 +49,7 @@ if __name__ == '__main__':
                    help='If true, shuffling of inputs and targets tests will be run')
     p.add_argument('--network_type', type=str, required=False, default='conv_net', choices=['conv_net', 'lstm'],
                    help='If true, uses convolutional instead of LSTM')
-    p.add_argument('--train', type=bool, required=False, default=False,
+    p.add_argument('--train', type=bool, required=False, default=True,
                    help='If set to True, the \"--classify\" parameter must either be a maildir with folders that have\n' +
                         'the class names to train present in the names of the folders (ie. \"socialfolder\" ' +
                         'has \"social\" in its name and will be used for training the \"social\" class), ' +
@@ -67,7 +67,7 @@ if __name__ == '__main__':
                    'maildir format, along with ground truth columns based on finding the classes in the folder names')
     p.add_argument('--results_path', type=str, required=False, default='./data/results.csv',
                    help='The path where a CSV file with email keys and classifications will be written')
-    p.add_argument('--learning_rate', type=float, required=False, default=0.001,
+    p.add_argument('--learning_rate', type=float, required=False, default=0.0005,
                    help='Set learning rate for neural networks')
     options = p.parse_args(gen_be=False)
 
@@ -83,9 +83,7 @@ if __name__ == '__main__':
         print('Resetting mkl backend to cpu')
         options.backend = 'cpu'
 
-    be = gen_backend(**extract_valid_args(options, gen_backend))
-    # patch a fix to stabilize the CPU version of Neon's logistic function
-    fix_logistic(be)
+    Config.options = options
 
     optimizer = Adam(learning_rate=options.learning_rate)
 
@@ -108,7 +106,8 @@ if __name__ == '__main__':
             print('SHUFFLE TEST PASSED... reloading inputs and targets')
             sdata = SentimentLoader(classifier, options.sentiment_path)
 
-        callbacks = Callbacks(classifier.neuralnet, **options.callback_args)
+        callbacks = Callbacks(classifier.neuralnet, eval_freq=1, eval_set=sdata.test,
+                              metric=Misclassification())
         callbacks.add_callback(MisclassificationTest(sdata.test))
         print('Training neural networks on {} samples for {} epochs'.format(sdata.train.targets[0].shape[1],
                                                                             options.epochs))
