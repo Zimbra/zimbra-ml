@@ -98,6 +98,7 @@ if __name__ == '__main__':
                                      network_type=options.network_type)
 
         # we will supercede the email classification function to test the content classification network only
+        print('loading sentiment data from {}'.format(options.sentiment_path))
         sdata = SentimentLoader(classifier, options.sentiment_path)
         if options.shuffle_test:
             print('SHUFFLE TEST BEGIN... please wait...')
