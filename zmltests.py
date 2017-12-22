@@ -30,6 +30,10 @@ if __name__ == '__main__':
     p = NeonArgparser(__doc__)
     p.add_argument('--word_vectors', type=str, required=False, default='./data/vocabularies/glove.6B.300d.txt',
                    help='Path to word vector file, including word, followed by vector per line, space separated')
+    p.add_argument('--lookup_size', type=int, default=0,
+                   help='If non-zero, a lookup table and an auto-vocabulary will be used instead of word vectors.')
+    p.add_argument('--lookup_dim', type=int, default=100,
+                   help='Word embedding dimensions when lookup_size specified.')
     p.add_argument('--exclusive_classes', type=str, required=False,
                    default='\"finance promos social forums updates\"',
                    help='The labels of the exclusive classes to either train on or classify. ' +
@@ -119,7 +123,8 @@ if __name__ == '__main__':
     classifier = EmailClassifier(options.word_vectors, options.model_file, optimizer=optimizer,
                                  num_analytics_features=0 if options.sentiment_path else 4,
                                  overlapping_classes=overlapping_classes, exclusive_classes=exclusive_classes,
-                                 network_type=options.network_type)
+                                 network_type=options.network_type, lookup_size=options.lookup_size,
+                                 lookup_dim=options.lookup_dim)
 
     # determine if we expect to use a csv file or a maildir as our data source
     if os.path.isfile(options.data_path):

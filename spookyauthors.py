@@ -62,9 +62,10 @@ class SpookyAuthors:
     def create_classifier():
         mutation = {'query': 'mutation {createClassifier(classifierSpec:{ ' +
                              'classifierId:{} '.format(json.dumps(sa.classifier_id)) +
-                             'numSubjectWords:0 numBodyWords:60 numFeatures:0 vocabPath:"{}" '.format(
-                                 sa.args.vocab
+                             'numSubjectWords:0 numBodyWords:{} numFeatures:0 vocabPath:"{}" '.format(
+                                 sa.args.num_words, sa.args.vocab
                              ) +
+                             'lookupSize:{} lookupDim:{} '.format(sa.args.lookup_size, sa.args.lookup_dim) +
                              'exclusiveClasses:[{}]'.format(
                                  ' '.join([json.dumps(s) for s in sa.classes])) +
                              ' }) {classifierInfo { ' + sa.classifier_fields + ' }}}'}
@@ -169,12 +170,21 @@ def main():
                    help='Delete the classifier entirely and create a new one.')
     p.add_argument('--epochs', type=int, default=5,
                    help='Total number of epochs the model should be trained, including those already done.')
-    p.add_argument('--vocab', type=str, default='glove.6B.300d.txt',
+    p.add_argument('--vocab', type=str, default='glove.6B.100d.txt',
                    help='Vocabulary file without directory location to use as word vectors.')
     p.add_argument('--learning_rate', type=float, default=0.001,
                    help='Learning rate for the Adam optimizer.')
+    p.add_argument('--lookup_size', type=int, default=0,
+                   help='If non-zero, a lookup table and an auto-vocabulary will be used.')
+    p.add_argument('--lookup_dim', type=int, default=100,
+                   help='Word embedding dimensions when lookup_size specified.')
+    p.add_argument('--num_words', type=int, default=60,
+                   help='Numer of words from each sample to use for scoring.')
 
     sa.args = p.parse_args()
+
+    # zero lookup table dimensions if no lookup table
+    sa.args.lookup_dim = 0 if sa.args.lookup_size == 0 else sa.args.lookup_dim
 
     print('Kaggle Spooky Author Identification challenge using the Zimbra Machine Learning '
           'classifier. \nCompetition details and datasets can be found at: '

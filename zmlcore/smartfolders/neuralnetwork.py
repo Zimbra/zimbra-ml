@@ -8,18 +8,23 @@ to the user account as analytics, as well as any other features that may be usef
 """
 from neon.models.model import Model
 from neon.layers import MergeMultistream, LSTM, Affine, RecurrentSum, Tree, BranchNode, SkipNode, Conv, Dropout
-from neon.initializers import GlorotUniform, Kaiming
+from neon.layers import MergeBroadcast, LookupTable, Reshape
+from neon.initializers import GlorotUniform, Kaiming, Uniform
 from neon.optimizers import Adam
-from neon.transforms import Softmax, Logistic, Rectlin
+from neon.transforms import Softmax, Logistic, Rectlin, Explin
+from zmlcore.licensed.layers import NoisyDropout, OutputDeltaBuffer
+
 
 class ClassifierNetwork(Model):
     def __init__(self, overlapping_classes=None, exclusive_classes=None, analytics_input=True,
-                 network_type='conv_net', num_words=60, width=100, optimizer=Adam()):
+                 network_type='conv_net', num_words=60, width=100, lookup_size=0, lookup_dim=0, optimizer=Adam()):
         self.width = width
         self.num_words = num_words
         self.overlapping_classes = overlapping_classes
         self.analytics_input = analytics_input
         self.recurrent = network_type == 'lstm'
+        self.lookup_size = lookup_size
+        self.lookup_dim = lookup_dim
 
         # we must have some exclusive classes
         if exclusive_classes is None:
@@ -45,8 +50,6 @@ class ClassifierNetwork(Model):
         layers = [input_layers,
                   # this is where inputs meet, and where we may want to add depth or
                   # additional functionality
-                  # Dropout(keep=0.8),
-                  # Affine(80 if self.num_words > 30 else 175, init, activation=activation),
                   Dropout(keep=0.8),
                   output_layers]
         super(ClassifierNetwork, self).__init__(layers, optimizer=optimizer)
@@ -95,22 +98,47 @@ class ClassifierNetwork(Model):
         return input_layers
 
     def conv_net(self, activation, init=Kaiming(), version=-1):
+        width = max([self.width, self.lookup_dim])
         if version == -1:
-            return [
-                Conv((2, self.width, self.width), padding={'pad_h': 1, 'pad_w': 0},
-                     init=init, activation=activation),
-                Dropout(keep=0.6),
-                Conv((3, 1, 80), padding={'pad_h': 1, 'pad_w': 0}, init=init, activation=activation),
-                Dropout(keep=0.925),
-                Conv((4, 1, 100), padding={'pad_h': 1, 'pad_w': 0}, init=init, activation=activation),
-                Dropout(keep=0.9),
-                Conv((5, 1, 100), strides={'str_h': 2 if self.num_words > 59 else 1,
-                                           'str_w': 1}, padding=0, init=init,
-                     activation=activation),
-                Dropout(keep=0.9),
-                Conv((3, 1, 100), strides={'str_h': 2, 'str_w': 1}, padding=0, init=init,
-                     activation=activation),
-                Dropout(keep=0.9),
-                Conv((7, 1, 80), strides={'str_h': 2, 'str_w': 1}, padding=0, init=init,
-                     activation=activation)
-            ]
+            if self.lookup_size:
+                pre_layers = [
+                    LookupTable(vocab_size=self.lookup_size, embedding_dim=width, init=GlorotUniform()),
+                    Reshape((1, self.num_words, width)),
+                ]
+                first_width = width
+            else:
+                pre_layers = [
+                    Conv((1, width, width), padding=0, init=init, activation=activation)
+                ]
+                first_width = 1
+
+            return pre_layers + \
+                   [
+                       MergeBroadcast(
+                           [
+                               [
+                                   Conv((3, first_width, 15), padding={'pad_h': 1, 'pad_w': 0}, init=init,
+                                        activation=activation)
+                               ],
+                               [
+                                   Conv((5, first_width, 15), padding={'pad_h': 2, 'pad_w': 0}, init=init,
+                                        activation=activation)
+                               ],
+                               [
+                                   Conv((7, first_width, 15), padding={'pad_h': 3, 'pad_w': 0}, init=init,
+                                        activation=activation)
+                               ],
+                           ],
+                           merge='depth'
+                       ),
+                       NoisyDropout(keep=0.5, noise_pct=1.0, noise_std=0.001),
+                       Conv((5, 1, 15), strides={'str_h': 2 if self.num_words > 59 else 1,
+                                                 'str_w': 1}, padding=0, init=init,
+                            activation=activation),
+                       NoisyDropout(keep=0.9, noise_pct=1.0, noise_std=0.00001),
+                       Conv((3, 1, 9), strides={'str_h': 2, 'str_w': 1}, padding=0, init=init,
+                            activation=activation),
+                       NoisyDropout(keep=0.9, noise_pct=1.0, noise_std=0.00001),
+                       Conv((9, 1, 9), strides={'str_h': 2, 'str_w': 1}, padding=0, init=init,
+                            activation=activation)
+                   ]

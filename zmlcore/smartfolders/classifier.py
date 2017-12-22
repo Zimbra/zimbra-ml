@@ -20,7 +20,6 @@ Create neural networks with:
 This also supports both text and HTML parsing in email, stripping HTML to the visible text only for processing.
 
 """
-import os
 import email
 from email.utils import getaddresses
 import numpy as np
@@ -41,9 +40,10 @@ import base64
 import re
 import uuid
 from zmlcore.data.dataiterator import BatchIterator
-from zmlcore.smartfolders.traincallbacks import MisclassificationTest, GCCallback
+from zmlcore.smartfolders.traincallbacks import MisclassificationTest
+from zmlcore.smartfolders.vocabularies import Vocabularies
 
-_vocabularies = {}
+
 class Config:
     options = None
     initialized = False
@@ -64,20 +64,48 @@ class Config:
 class EmailClassifier(object):
     def __init__(self, vocab_path, model_path, optimizer=Adam(), overlapping_classes=None, exclusive_classes=None,
                  class_threshold=0.6, num_analytics_features=4, num_subject_words=8, num_body_words=52,
-                 network_type='conv_net', name=str(uuid.uuid4())):
+                 network_type='conv_net', lookup_size=0, lookup_dim=0, name=str(uuid.uuid4())):
         """
-        loads the vocabulary and sets up LSTM networks for classification.
+        :param vocab_path:
+        :param model_path:
+        :param optimizer:
+        :param overlapping_classes:
+        :param exclusive_classes:
+        :param class_threshold:
+        :param num_analytics_features:
+        :param num_subject_words:
+        :param num_body_words:
+        :param network_type:
+        :param lookup_size: if zero, we expect to be able to load a vocabulary, otherwise, we will make a lookup
+        table that grows as we train
+        :param lookup_dim: dimensions of a lookup table if we have one
+        :param name:
         """
         self.name = name
-        self.wordvec_dimensions = 0
-        self.vocab = self.load_vocabulary(vocab_path)
-        self.recurrent = network_type == 'lstm'
-        assert self.wordvec_dimensions > 0
-
         self.num_subject_words = num_subject_words
         self.num_body_words = num_body_words
         self.num_words = num_subject_words + num_body_words
         self.class_threshold = class_threshold
+
+        self.lookup_dim = lookup_dim
+        self.lookup_size = lookup_size
+
+        self.vocab = Vocabularies.load_vocabulary(vocab_path)
+        self.vocab_path = vocab_path
+
+        if self.vocab is None:
+            if lookup_size > 0:
+                self.wordvec_dimensions = 1
+            else:
+                self.wordvec_dimensions = 0
+        else:
+            for wv in self.vocab.values():
+                self.wordvec_dimensions = len(wv)
+                break
+
+        assert self.wordvec_dimensions > 0
+
+        self.recurrent = network_type == 'lstm'
 
         self.exclusive_classes = exclusive_classes
         self.overlapping_classes = overlapping_classes
@@ -86,13 +114,15 @@ class EmailClassifier(object):
                                  'exclusive_classes':exclusive_classes,
                                  'optimizer':optimizer, 'network_type':network_type,
                                  'analytics_input':False if num_analytics_features == 0 else True,
-                                 'num_words':self.num_words, 'width':self.wordvec_dimensions}
+                                 'num_words':self.num_words, 'width': self.wordvec_dimensions,
+                                 'lookup_size':lookup_size, 'lookup_dim': lookup_dim}
 
         self.model_path = model_path
         self.network_type = network_type
         self.num_features = num_analytics_features
 
         self.neuralnet = None
+        self.optimizer = optimizer
         self.initialize_neural_network()
 
     def initialize_neural_network(self):
@@ -145,38 +175,6 @@ class EmailClassifier(object):
         :return:
         """
         return self.neuralnet.be
-
-    def load_vocabulary(self, vocab_path):
-        """
-        path for word2vec or glove text embedding vocabularies
-        :param vocab_path:
-        :return:
-        """
-        vocab_path = os.path.abspath(vocab_path)
-        vocab = _vocabularies.get(vocab_path, None)
-        if vocab:
-            for wv in vocab.values():
-                self.wordvec_dimensions = len(wv)
-                break
-        else:
-            print('loading word vectors from {} ... '.format(vocab_path), end='', flush=True)
-            vocab = {}
-            failures = 0
-            with open(vocab_path, 'r') as f:
-                tokens = []
-                for line in f:
-                    if len(line) > 0:
-                        tokens = line.split()
-                        try:
-                            vocab[tokens[0]] = np.array(tokens[1:], dtype=np.float32)
-                        except Exception as e:
-                            failures += 1
-                self.wordvec_dimensions = len(tokens) - 1
-            if failures > 0:
-                print('failed to load {} word vectors... '.format(failures), end='')
-            print('loaded {} words successfully'.format(len(vocab)))
-            _vocabularies[vocab_path] = vocab
-        return vocab
 
     def tag_visible(self, element):
         if element.parent.name in ('style', 'script', 'head', 'title', 'meta', '[document]'):
@@ -253,8 +251,6 @@ class EmailClassifier(object):
                                            w in (s.group(0).lower() for s in re.finditer(r"\w+|[^\w\s]", text))
                                            if not self.vocab.get(w, None) is None),
                                           range(self.num_words))]
-        # text_w = [s.group(0).lower() for s, i in zip(re.finditer(r"\w+|[^\w\s]", text), range(self.num_words))]
-        # text_v = [self.vocab[w] for w in text_w if not self.vocab.get(w, None) is None]
         return text_vectors + [self.zeros for _ in range(self.num_words - len(text_vectors))]
 
     def content_to_nn_representation(self, content, features=None, receiver_address=None):
@@ -301,19 +297,19 @@ class EmailClassifier(object):
                 #   4. is this a forward?
                 subject = c[subject_key]
 
-                subject_v = [v for v, _ in zip((self.vocab[w] for
-                                                w in (s.group(0).lower() for s in re.finditer(r"\w+|[^\w\s]", subject))
+                subject_v = [v for v, _ in zip((self.vocab[w] for w in
+                                                (s.group(0).lower() for s in re.finditer(r"\w+|[^\w\s]", subject))
                                                 if not self.vocab.get(w, None) is None),
                                                range(self.num_subject_words))]
 
-                body_v = [v for v, _ in zip((self.vocab[w] for
-                                             w in (s.group(0).lower() for s in re.finditer(r"\w+|[^\w\s]", c[text_key]))
+                body_v = [v for v, _ in zip((self.vocab[w] for w in
+                                             (s.group(0).lower() for s in re.finditer(r"\w+|[^\w\s]", c[text_key]))
                                              if not self.vocab.get(w, None) is None),
                                             range(self.num_body_words))]
 
                 rinputs += subject_v + \
-                           [self.zeros for _ in range(np.maximum(int(0), self.num_subject_words - len(subject_v)))] + \
-                           body_v + \
+                           [self.zeros for _ in range(np.maximum(int(0), self.num_subject_words - len(subject_v)))]\
+                           + body_v + \
                            [self.zeros for _ in range(np.maximum(int(0), self.num_body_words - len(body_v)))]
 
                 if not self.neuralnet.analytics_input:
@@ -374,6 +370,8 @@ class EmailClassifier(object):
         """
         This takes text and text classes, as well as additional features, and an optional holdout percent, and
         converts the input into numerical output that can be used for training.
+        :param vocab_path: path name for the vocabulary file, which may need to be generated if it is not in memory
+        or file storage
         :param content: list of email.message objects or strings of text
         :param targets: one or two lists, depending on classifier of first exclusive class targets as strings, and
         overlapping class targets as lists of strings, one per content item
@@ -391,8 +389,26 @@ class EmailClassifier(object):
         # if we also have overlapping targets, add them
         have_ol = not self.overlapping_classes is None
 
+        # we may not have a valid vocabulary, which is our first task, if not
+        if self.vocab is None:
+            # we need to generate a vocabulary from the training data
+            if isinstance(content[0], email.message.Message):
+                docs = [' '.join([c.get('subject', '').lower() if isinstance(c.get('subject', ''), str) else '',
+                                  ' '.join([self.extract_inline_text(p) for p in c.walk()])
+                                  if c.is_multipart() else self.extract_inline_text(c)])
+                        for c in content]
+            else:
+                docs = content
+
+            self.vocab = Vocabularies.gen_vocabulary(self.vocab_path,
+                                                     docs,
+                                                     n_first_words=10000,
+                                                     size=self.lookup_size)
+
         content = self.content_to_nn_representation(content, features=features, receiver_address=receiver_address)
-        content[0] = content[0].reshape((len(content[0]) // self.num_words, 1, self.num_words, len(content[0][0])))
+
+        if not self.recurrent:
+            content[0] = content[0].reshape((len(content[0]) // self.num_words, 1, self.num_words, len(content[0][0])))
 
         if not test_content is None and not test_targets is None:
             holdout_pct = 0.0
@@ -496,7 +512,9 @@ class EmailClassifier(object):
         if not valid is None:
             print('Starting misclassification error = {:.03}%'.format(self.neuralnet.eval(valid, metric)[0] * 100))
             callbacks.add_callback(MisclassificationTest(valid))
-        self.fit(train, Adam(learning_rate=learning_rate), epochs, callbacks)
+        if hasattr(self.optimizer, 'learning_rate'):
+            self.optimizer.learning_rate = learning_rate
+        self.fit(train, self.optimizer, epochs, callbacks)
 
     def numeric_to_text_classes(self, classes):
         """

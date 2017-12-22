@@ -1,95 +1,66 @@
-<div>
+# Automatic Text Classification
 
-<span class="c1"></span>
+As part of the Next Gen Zimbra server, we have implemented an automatic message text classification system, initially supporting email,  HTML and text, which will, by default, tag incoming messages with classification categories based on [insights published on automatic classification](https://arxiv.org/pdf/1606.09296.pdf) by Yahoo Research.
 
-</div>
+The core insight from recent research such as Yahoo’s that we will leverage to provide default benefit from the classifier is that a small number of automatic categories can provide significant value to users and maps to the most common way people who take the time already organize their folders. While Yahoo used latent dirichlet allocation (LDA), topic modeling, opt-in user interaction, and a great deal of analytics, we took a simpler approach that leverages the value of their conclusions, while using word embedding techniques and convolutional neural networks to provide simple text classification that is competitive with other general state of the art methods.
 
-<span class="c8">Automatic Classification of Messages</span>
+As a starting point, we have built a general classification server, and focused our efforts and design on the requirement that the system do an acceptable or better job classifying messages, at least in the general categories considered most useful.
 
-# <span class="c2">Overview</span>
+The broad categories yahoo identified as useful and important in Yahoo’s research were: "human" generated, “shopping”, “financial”, “travel”, “social”, and “career”. While separating out “human” as a category simplified classification using bag of words methods or cosine similarity and allowed for some shortcuts (all “re:” and “fw:” mails were considered human), it would certainly help if an email system could separate human generated messages into those that are more likely to be considered important as well as allow human generated messages to be included in the category “career” or “financial”, as well as potentially any of the others.
 
-<span>As part of the Next Gen Zimbra server, we will implement an automatic message classification system, initially supporting email, which will tag incoming messages with classification metadata based on</span> <span class="c7">[insights published on automatic classification](https://www.google.com/url?q=https://arxiv.org/pdf/1606.09296.pdf&sa=D&ust=1505953497834000&usg=AFQjCNG0klLNefl4csM7fBGvJLfWWNB4bw)</span><span class="c1"> by Yahoo Research.</span>
+# Zimbra Message Classifier
 
-<span class="c1"></span>
+In order to improve upon today’s best approaches, make these categories fit the broadest number of users, regardless of their profession or lifestyle, and attempt to provide more organization of all e-mail streams, not just computer generated, we define the following categories:
 
-<span class="c1">The core insight from recent research such as Yahoo’s that we will leverage is that a small number of automatic categories can provide significant value to users and maps to the most common way people who take the time already organize their folders. While Yahoo used latent dirichlet allocation (LDA), topic modeling, opt-in user interaction, and a great deal of analytics, we will take a simpler approach that leverages the value of their conclusions, by which it justifies its relatively modest goals.</span>
+* "Important" - all mails that the system believes the user is likely to consider higher priority or more important than the others. While messages categorized into important will usually be human generated, we may also find that certain types of computer generated mail, such as bank notifications, utilities, bills, permits, or other types of mail is generally considered important/high priority for users.
 
-<span class="c1"></span>
+* "Work" - this is intended to serve as a proxy for “career”, since while not everyone will identify with having a career specifically, almost all people, whether entrepreneurs, house husbands/wives, career minded professionals, or CEOs likely have work.
 
-<span class="c1">As a starting point, we will create a general classification system, but focus our efforts and design on the requirement that the system do an acceptable or better job classifying messages, at least in the general categories considered most useful, based on research. We will also make some decisions about how we interpret those categories, which we believe will improve on Yahoo’s approach as well as guide us in defining the data and features needed for our classification tasks.</span>
+* "Shopping" - the promotional spam that you don’t consider spam
 
-<span class="c1"></span>
+* "Financial" - this likely includes mail from financial institutions/banks, etc., but may include human generated email from a stock broker, etc.
 
-<span class="c1">The broad categories yahoo identified as useful and important in Yahoo’s research were: “human” generated, “shopping”, “financial”, “travel”, “social”, and “career”. While separating out “human” as a category simplified classification using bag of words methods or cosine similarity and allowed for some shortcuts (all “re:” and “fw:” mails were considered human), it would certainly help if an email system could separate human generated messages into those that are more likely to be considered important as well as allow human generated messages to be included in the category “career” or “financial”, as well as potentially any of the others.</span>
+* "Social" - notifications and messages from social networking services
 
-# <span class="c2">Zimbra Message Classifier</span>
+In addition to processing the message subject and text, we also leverage the following data in making our classification decision:
 
-<span class="c1">In order to improve upon today’s best approaches, make these categories fit the broadest number of users, regardless of their profession or lifestyle, and attempt to provide more organization of all e-mail streams, not just computer generated, we will define the following categories:</span>
+* address headers, complete email/friendly addresses, to and cc blocks
 
-<span class="c1"></span>
+* subject and hash of canonical subject
 
-*   <span class="c1">“Important” - all mails that the system believes the user is likely to consider higher priority or more important than the others. While messages categorized into important will usually be human generated, we may also find that certain types of computer generated mail, such as bank notifications, utilities, bills, permits, or other types of mail is generally considered important/high priority for users.</span>
-*   <span class="c1">“Work” - this is intended to serve as a proxy for “career”, since while not everyone will identify with having a career specifically, almost all people, whether entrepreneurs, house husbands/wives, career minded professionals, or CEOs likely have work.</span>
-*   <span class="c1">“Shopping” - the promotional spam that you don’t consider spam</span>
-*   <span class="c1">“Financial” - this likely includes mail from financial institutions/banks, etc., but may include human generated email from a stock broker, etc.</span>
-*   <span class="c1">“Social” - notifications and messages from social networking services</span>
+* body text
 
-<span class="c1"></span>
+# Analytics for Scalable Personalization
 
-<span class="c1">Our approach to classification will be implemented as a postfix filter, leveraging the milter API, which is the same API supported by numerous mail filters, virus, and spam scanners, including AMaVis. We will start with access to the raw message, and leverage the following data in making our classification decision:</span>
+To enable the use of a machine learning model that is common to all users, yet makes decisions based on individual users’ relationships to senders, text/subject and other addresses in the mail address block, certain features used for classification of messages are based on analytics, which are processed and gathered regularly for each account. The following are analytics-based features that we include when classifying emails as "important".
 
-<span class="c1"></span>
+Analytics or metadata-driven Features
 
-*   <span class="c1">all address headers, complete email/friendly addresses, to and cc blocks</span>
-*   <span class="c1">subject and hash of canonical subject</span>
-*   <span class="c1">body text</span>
+1. How many times has user sent e-mail to sender?
 
-# <span class="c2">Analytics for Scalable Personalization</span>
+2. How many times has sender sent e-mail to user?
 
-<span class="c1">To enable the use of a machine learning model that is common to all users, yet makes decisions based on individual users’ relationships to senders, text/subject and other addresses in the mail address block, certain features used for classification of messages will be based on analytics, which will be processed and gathered regularly for each account. The following are analytics-based features that we expect to use analytics to classify which emails should be categorized as “important”.</span>
+3. 1 & 2 for past day, week, month, forever
 
-<span class="c1"></span>
+4. Abbreviate #3 for first 10 addresses in to/cc
 
-<span class="c1">Analytics-driven Features</span>
+5. Percent email opened from sender, avg time to open email from sender vs. global avg
 
-1.  <span class="c1">How many times has user sent e-mail to sender?</span>
-2.  <span class="c1">How many times has sender sent e-mail to user?</span>
-3.  <span class="c1">1 & 2 for past day, week, month, forever</span>
-4.  <span class="c1">Abbreviate #3 for first 10 addresses in to/cc</span>
-5.  <span class="c1">Percent email opened from sender, avg time to open email from sender vs. global avg</span>
-6.  <span class="c1">Subject canonical hash matches sent mail at any time from user to sender (this may be difficult or require contact analytics of canonical subject hashes to user)</span>
+6. Subject canonical hash matches sent mail at any time from user to sender (this may be difficult or require contact analytics of canonical subject hashes to user)
 
-<span class="c1"></span>
+7. User is on "to", “cc”, “none/bcc”
 
-<span class="c1">In addition, we will consider the following features, which will be calculated/cached on the fly:</span>
+8. Number of other users on "to" on “cc”
 
-*   <span class="c1">User is on “to”, “cc”, “none/bcc”</span>
-*   <span class="c1">Number of other users on “to” on “cc”</span>
-*   <span class="c1">Subject canonical hash matches recently sent mail</span>
+9. Subject canonical hash matches recently sent mail
 
-<span class="c1"></span>
+While the convolutional networks employed do an excellent job of classifying a given amount of text, features are generally rolled up to a paragraph level. We have found that with a simplifying assumption that all of the text required to properly classify the overwhelming majority of e-mail will be contained in the first 60 words of an e-mail’s concatenated subject and body text, we can get almost the same results for our purposes as if we consider the entire text. The rationale for this approach is that anyone sending e-mail that they expect the receiver to read, except for cases where the identity of the sender overwhelmingly takes precedence over the subject, MUST identify their topic very early in the message.
 
-<span class="c1">We will leverage the message content for classification with a simplifying assumption that all of the text required to properly classify the overwhelming majority of e-mail will be contained in the first “n” words of an e-mail’s concatenated subject and body text, where “n” is a small number, such as 20 to 30\. The rationale for this is that anyone sending e-mail that they expect the receiver to read, except for cases where the identity of the sender overwhelmingly takes precedence over the subject, MUST identify their topic very early in the message. Based on the realities of the email volumes, value of time and human attention as applied to email, we will make the assertion that the previous statement is true and expect to use only the first “small n” number of words for classification. The exact value of n will be determined empirically. This assumption enables us to use potentially more effective classification techniques, such as recurrent neural network inference, while limited the compute cost through limiting the amount of data processed. For example, a small recurrent neural network running inference on 30 words, each being a 100 dimensional word embedding (described below) may take tens of milliseconds on a typical, unaccelerated server, and could be vertically (with GPU acceleration) and horizontally scaled to any degree. Running large, variable sequences of words through such a network could quickly become prohibitive, but it becomes an option if our assumption of the first 30 words of content is correct.</span>
+Since we expect to attempt classification on a broad range of emails, including those generated by humans, we must be able to understand an incredibly large vocabulary, while remaining localizable to multiple languages. We use a convolutional network that employs multi-field scanning techniques rather than rely on TF-IDF or bag of words models for classification, and to deal with the inherently large vocabulary space while still enabling generalized learning of our classifiers, we employ word embeddings, providing options for using pre-trained word embeddings, or generating word embeddings specifically for the training task at hand. For example, it is widely cited in word embedding tutorials that in typical embeddings, if you take the vector representation of the word for "king", subtract the vector of the word for “man”, and add the vector of the word for “woman”, the resulting vector will be extremely close to the vector for “queen”. For some tasks, the use of pre-trained word embeddings can improve generalization across terms or combinations of terms that a classifier may not have previously encountered.
 
-<span class="c1"></span>
-
-<span class="c1">Since we expect to attempt classification on a broad range of emails, including those generated by humans, we must be able to understand an incredibly large vocabulary, while remaining localizable to multiple languages. We will use LSTM neural networks rather than rely on TF-IDF or bag of words models for classification, and to deal with the inherently large vocabulary space while still enabling generalized learning of our classifiers, we will employ word embeddings, which provide numeric representations of words that correlate strongly to the meaning of those words and their relationship to others. For example, it is widely cited in word embedding tutorials that in typical embeddings, if you take the vector representation of the word for “king”, subtract the vector of the word for “man”, and add the vector of the word for “woman”, the resulting vector will be extremely close to the vector for “queen”. While we will endeavor to train adequately across the types of mail we expect to classify, the use of word embeddings should improve generalization across terms or combinations of terms that we may not have previously encountered.</span>
-
-<span class="c1"></span>
-
-<span class="c1">Additional features, such as analytics results will be combined with the LSTM results through a linear network, followed by classification output of categories that include exclusive tags “work”, “financial”, “social”, “shopping”, and one tag that can overlap with any of them, “important”. The network will look like the following:</span>
+Additional features, such as analytics results will be combined with the convolutional network’s results through a linear network, followed by classification output of categories that include exclusive tags "work", “financial”, “social”, “shopping”, and other tags that can overlap with any of them, such as “important”. The network structure is generally the following:
 
 <span style="overflow: hidden; display: inline-block; margin: 0.00px 0.00px; border: 0.00px solid #000000; transform: rotate(0.00rad) translateZ(0px); -webkit-transform: rotate(0.00rad) translateZ(0px); width: 624.00px; height: 330.67px;">![](images/nntopology.png)</span>
 
-<span class="c1"></span>
 
-<span class="c1">While Google’s Word2Vec is the commonly referenced word embedding training method used presently, Stanford University has released a generally more accurate embedding model, called GloVe (global vectors) along with pre-trained embeddings for 400 thousand words, short phrases, and symbol combinations taken from a combination of Wikipedia and a large word database known as Gigawords. We will use Glove embeddings and test the number of dimensions required to get satisfactory results. Available pre-trained models for GloVe embeddings are 50, 100, 200, and 300 dimension embedding vectors. The tradeoff in vector size is generally accuracy of embedding, which translates in our case to accuracy of training, with training time, model size and compute time while running.</span>
-
-# <span class="c2">Training Data</span>
-
-<span class="c1">In order to provide an accurate classifier, we will need access to as much labeled training data as possible. We have discussed ways of getting data, which, for all categories besides “important”, can be acquired from objective sources in the market or from previously classified e-mails. Our determination of what is “important” is likely to require some assertions relative to the features we have defined, and we can then generate synthetic training data to train the concept of “important” into the neural network.</span>
-
-<span class="c1"></span>
-
-<span class="c1">It would also help if we could leverage all users and the current analytics plan by marketing the smart folders as “learning” folders, which really can learn in aggregate if people actively use them. Rather than collect PID from people who use the folders, we could relate some features we have defined above to the messages in each folder, especially to learn about how those features relate to what is “important” or possibly help exclude certain types of mail broadly.</span>
-
+The current classifier allows selection and configuration of a wide variety of pre-trained, as well as custom vocabularies.

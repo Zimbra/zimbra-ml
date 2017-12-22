@@ -32,7 +32,10 @@ class DEFAULTS:
     MODEL_PATH = 'data/models/'
     MODEL_EXT = '.model'
     VOCAB_PATH = 'data/vocabularies/'
+    VOCAB_EXT = '.vocab' # these are for our auto-vocabularies
     VOCAB_FILE = 'glove.6B.100d.txt'
+    LOOKUP_SIZE = 0
+    LOOKUP_DIM = 0
     META_PATH = 'data/meta/'
     TRAIN_PATH = 'data/train/'
     META_EXT = '.zml'
@@ -88,14 +91,7 @@ def load_classifier_info(classifier_id):
         with open(os.path.join(DEFAULTS.META_PATH,
                                classifier_id + DEFAULTS.META_EXT), 'r') as f:
             c_dict = json.loads(f.read())
-            c_info = ClassifierInfo(classifier_id=classifier_id,
-                                    vocab_path=c_dict['vocab_path'],
-                                    exclusive_classes=c_dict['exclusive_classes'],
-                                    overlapping_classes=c_dict['overlapping_classes'],
-                                    num_features=c_dict['num_features'],
-                                    num_subject_words=c_dict['num_subject_words'],
-                                    num_body_words=c_dict['num_body_words'],
-                                    epoch=c_dict['epoch'],
+            c_info = ClassifierInfo(**{k: v for k, v in c_dict.items() if k != 'training_set'},
                                     training_set=None if c_dict.get('training_set', None) is None else
                                     TrainingSetInfo(**c_dict['training_set']))
             return c_info
@@ -104,12 +100,13 @@ def load_classifier_info(classifier_id):
         raise FileNotFoundError('Classifier {} not found'.format(classifier_id))
 
 
-class OverlappingClassification(graphene.ObjectType):
+class ClassifierOutput(graphene.ObjectType):
     class Meta:
-        description = 'Classifications for overlapping classes are not scalars, as they include a probability of ' \
-                      'class membership.'
+        description = 'Lists of lists of raw numeric data that is the floating point output of the classifier ' \
+                      'before it has been sorted, maxxed, and mapped to class names.'
     name = graphene.String(required=True)
-    probability = graphene.Float(required=True)
+    output = graphene.List(graphene.List(graphene.Float),
+                           description='List of 1 or more lists of floats for each output type.')
 
 
 class TextClasses(graphene.ObjectType):
@@ -187,9 +184,15 @@ class ClassifierSpec(graphene.InputObjectType):
                                                 'API that may instantiate a classifier. It is optional for '
                                                 'instantiation of new classifiers, as a default UUID is provided.',
                                     default_value=None)
-    vocab_path = graphene.String(description='Optional path to an alternate vocabulary file. This API currently '
-                                             'supports the Stanford GloVe format files.',
+    vocab_path = graphene.String(description='Optional name of a vocabulary file. This API currently '
+                                             'supports the Stanford GloVe format files. Specifying a lookup table '
+                                             'size with lookup_size causes this parameter to be ignored.',
                                  default_value=DEFAULTS.VOCAB_FILE)
+    lookup_size = graphene.Int(description='Alternative to vocab_path, used for auto lookup table creation from '
+                                           'training data.',
+                                 default_value=DEFAULTS.LOOKUP_SIZE)
+    lookup_dim = graphene.Int(description='Dimensions of embeddings in the automatic lookup table.',
+                                 default_value=DEFAULTS.LOOKUP_DIM)
     num_subject_words = graphene.Int(description='Number of subject words. Currently, subject and body words must add '
                                                  'up to either 30 or 60. The total is used for text.',
                                      default_value=8)
@@ -240,6 +243,35 @@ class TrainingSetInfo(graphene.ObjectType):
                             default_value=0)
 
 
+class SubscriptionMessage(graphene.ObjectType):
+    class Meta:
+        description = 'Base type for all subscription messages.'
+    date = graphene.String(description='The date and time in UTC format that this message was created.')
+
+
+class EpochTrainingResults(SubscriptionMessage):
+    class Meta:
+        description = 'Progress results per epoch, validation loss and misclassification rate.'
+    batches_complete = graphene.Int(description='Number of batches completed this epoch.')
+    loss = graphene.List(graphene.Float, description='Cross entropy validation loss for exclusive classes and MSE '
+                                                     'loss for overlapping classes. This returns a list of one or '
+                                                     'more values, with one value per output class type.')
+    misclassification = graphene.List(graphene.Float, description='Validation misclassification rate in percent. This '
+                                                                  'returns a list of one or more values, with one '
+                                                                  'value per output class type.')
+
+
+class BatchTrainingResults(graphene.ObjectType):
+    class Meta:
+        description = 'Training loss results per batch.'
+    loss = graphene.List(graphene.Float, description='Cross entropy training loss for exclusive classes and MSE '
+                                                     'loss for overlapping classes. This returns a list of one or '
+                                                     'more values, with one value per output class type.')
+    misclassification = graphene.List(graphene.Float, description='Training misclassification rate in percent. This '
+                                                                  'returns a list of one or more values, with one '
+                                                                  'value per output class type.')
+
+
 class ClassifierInfo(graphene.ObjectType):
     class Meta:
         description = 'Return information about an instantiated classifier, including ID and epoch.'
@@ -250,6 +282,9 @@ class ClassifierInfo(graphene.ObjectType):
                                                 'across servers to identify shared classifiers.',
                                     required=True)
     vocab_path = graphene.String(description='Path to the vocabulary used.')
+    lookup_size = graphene.Int(description='Alternative to vocab_path, used for auto lookup table creation from '
+                                           'training data.')
+    lookup_dim = graphene.Int(description='Dimensions of embeddings in the automatic lookup table.')
     num_subject_words = graphene.Int(description='Current number of subject words of the classifer.')
     num_body_words = graphene.Int(description='Current number of body words of the classifer.')
     num_features = graphene.Int(description='Number of features, in addition to content, considered.')
@@ -336,7 +371,8 @@ class ClassifierQuery(graphene.ObjectType):
                                          overlapping_classes=c_dict['overlapping_classes'],
                                          num_analytics_features=c_dict['num_features'],
                                          num_subject_words=c_dict['num_subject_words'],
-                                         num_body_words=c_dict['num_body_words'])
+                                         num_body_words=c_dict['num_body_words'],
+                                         lookup_size=c_dict['lookup_size'], lookup_dim=c_dict['lookup_dim'])
 
             # get ID and store in our local dict as a cache
             _global_classifiers[classifier_id] = classifier
@@ -349,7 +385,9 @@ class ClassifierQuery(graphene.ObjectType):
                                     num_subject_words=c_dict['num_subject_words'],
                                     num_body_words=c_dict['num_body_words'],
                                     epoch=classifier.neuralnet.epoch_index,
-                                    training_set=c_dict['training_set'])
+                                    training_set=c_dict['training_set'],
+                                    lookup_size=c_dict['lookup_size'],
+                                    lookup_dim=c_dict['lookup_dim'])
 
             _global_classifier_info[classifier_id] = c_info
 
@@ -430,6 +468,11 @@ class CreateClassifier(graphene.Mutation):
                     classifier_spec.classifier_id
                 ))
 
+        if classifier_spec.lookup_size > 0:
+            # if we are to use a lookup table, we generate an internal, per classifier vocabulary path name
+            classifier_spec.vocab_path = \
+                classifier_spec['vocab_path'] = classifier_spec.classifier_id + DEFAULTS.VOCAB_EXT
+
         classifier = EmailClassifier(os.path.join(DEFAULTS.VOCAB_PATH, classifier_spec.vocab_path),
                                      os.path.join(DEFAULTS.MODEL_PATH,
                                                   classifier_spec.classifier_id + DEFAULTS.MODEL_EXT),
@@ -437,7 +480,9 @@ class CreateClassifier(graphene.Mutation):
                                      overlapping_classes=classifier_spec.overlapping_classes,
                                      num_analytics_features=classifier_spec.num_features,
                                      num_subject_words=classifier_spec.num_subject_words,
-                                     num_body_words=classifier_spec.num_body_words)
+                                     num_body_words=classifier_spec.num_body_words,
+                                     lookup_size=classifier_spec.lookup_size,
+                                     lookup_dim=classifier_spec.lookup_dim)
 
         # get and ID and store in our local dict as a cache
         _global_classifiers[classifier_spec.classifier_id] = classifier
@@ -449,7 +494,9 @@ class CreateClassifier(graphene.Mutation):
                                                           num_features=classifier_spec.num_features,
                                                           exclusive_classes=classifier_spec.exclusive_classes,
                                                           overlapping_classes=classifier_spec.overlapping_classes,
-                                                          epoch=classifier.neuralnet.epoch_index)
+                                                          epoch=classifier.neuralnet.epoch_index,
+                                                          lookup_size=classifier_spec.lookup_size,
+                                                          lookup_dim=classifier_spec.lookup_dim)
 
         save_classifier_info(CreateClassifier.classifier_info)
         _global_classifier_info[classifier_spec.classifier_id] = CreateClassifier.classifier_info
@@ -575,6 +622,12 @@ class DeleteClassifier(graphene.Mutation):
 
         try:
             os.remove(os.path.join(DEFAULTS.MODEL_PATH, classifier_id + DEFAULTS.MODEL_EXT))
+        except FileNotFoundError:
+            pass
+
+        try:
+            # remove any custom vocabulary, if there is one
+            os.remove(os.path.join(DEFAULTS.VOCAB_PATH, classifier_id + DEFAULTS.VOCAB_EXT))
         except FileNotFoundError:
             pass
 
