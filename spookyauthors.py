@@ -179,7 +179,7 @@ def main():
     p.add_argument('--lookup_dim', type=int, default=100,
                    help='Word embedding dimensions when lookup_size specified.')
     p.add_argument('--num_words', type=int, default=60,
-                   help='Numer of words from each sample to use for scoring.')
+                   help='Number of words from each sample to use for scoring.')
 
     sa.args = p.parse_args()
 

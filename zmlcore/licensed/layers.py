@@ -1,5 +1,7 @@
 #
-# (C) 2017, Michael Toutonghi - Licensed to Synacor for non-exclusive, unlimited use, reproduction, and derivation.
+# (C) 2017, Michael Toutonghi
+# Licensed to Synacor for non-exclusive, unlimited use, reproduction, derivation, re-distribution, and
+# non-exlusive re-license.
 #
 # Author: Michael Toutonghi
 # Creation date: 1/12/2017

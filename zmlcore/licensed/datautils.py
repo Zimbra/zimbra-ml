@@ -4,16 +4,16 @@
 Author: Michael Toutonghi
 Creation date: 5/7/2017
 
-Licensed to Synacor for non-exclusive, unlimited use, reproduction, and derivation.
+Licensed to Synacor for non-exclusive, unlimited use, reproduction, derivation, re-distribution, and
+non-exlusive re-license.
 
 This file includes classes to fill in the blanks around available libraries and make some efficient
 but important data operations easier.
 
 Includes:
-DateTimeFormats: Easy manipulation of dates and times, with simple timezone support for data retrieval and storage
-ArrayFields: Access an array of values through python fields, gaining the best of both worlds when dealing with large
-amounts of data
-
+DateTimeFormats: Canonical dates and times, with simple timezone support for data retrieval, indexing, and storage
+ArrayFields: Access an array of values through fields of a Python object, gaining no-copy, high-performance and
+convenient access to large amounts of data
 
 """
 import pytz
