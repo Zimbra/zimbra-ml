@@ -17,7 +17,7 @@ import graphene
 import urllib3
 import numpy as np
 import pickle
-from zmlcore.smartfolders.classifier import TextClassifier
+from zmlcore.classifier.classifier import TextClassifier
 import uuid
 import email
 import json

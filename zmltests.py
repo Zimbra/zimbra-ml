@@ -16,8 +16,8 @@ from neon.optimizers import Adam
 from neon.callbacks.callbacks import Callbacks, TrainMulticostCallback
 from neon.transforms.cost import Misclassification
 from zmlcore.neonfixes.metrics import MultiMetric
-from zmlcore.smartfolders.classifier import TextClassifier, Config
-from zmlcore.smartfolders.traincallbacks import TrainingProgress, MisclassificationTest
+from zmlcore.classifier.classifier import TextClassifier, Config
+from zmlcore.classifier.traincallbacks import TrainingProgress, MisclassificationTest
 from zmlcore.data.dataiterator import TrainingIterator, BatchIterator
 from zmlcore.data.sentiment_loader import SentimentLoader
 from zmlcore.neonfixes.transforms import fix_logistic

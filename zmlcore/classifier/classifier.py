@@ -40,9 +40,9 @@ import base64
 import re
 import uuid
 from zmlcore.data.dataiterator import BatchIterator
-from zmlcore.smartfolders.traincallbacks import MisclassificationTest, LogLossTest
+from zmlcore.classifier.traincallbacks import MisclassificationTest, LogLossTest
 from zmlcore.neonfixes.metrics import AverageLogLoss
-from zmlcore.smartfolders.vocabularies import Vocabularies, clean_text
+from zmlcore.classifier.vocabularies import Vocabularies, clean_text
 
 
 class Config:

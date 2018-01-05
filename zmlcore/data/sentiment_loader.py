@@ -10,7 +10,7 @@ import os
 import numpy as np
 from neon import NervanaObject
 from zmlcore.data.dataiterator import BatchIterator
-from zmlcore.smartfolders.classifier import TextClassifier
+from zmlcore.classifier.classifier import TextClassifier
 
 
 class SentimentLoader(NervanaObject):

@@ -12,7 +12,7 @@ import datetime
 from tornadoql.tornadoql import TornadoQL, PORT
 from graphene import Schema
 from schema.schema import ClassifierQuery, Mutations, ObserveClassifier
-from zmlcore.smartfolders.classifier import Config
+from zmlcore.classifier.classifier import Config
 from neon.util.argparser import NeonArgparser
 
 
