@@ -6,7 +6,7 @@ Callbacks for reporting progress during training
 """
 from neon.callbacks.callbacks import Callback
 from neon.transforms.cost import Misclassification, LogLoss
-from ..neonfixes.metrics import MultiMetric
+from zmlcore.neonfixes.metrics import MultiMetric
 import gc
 
 
@@ -17,8 +17,8 @@ class TrainingProgress(Callback):
     def __init__(self, valid):
         super(TrainingProgress, self).__init__(epoch_freq=1)
         self.valid = valid
-        self.exclusive_metric = MultiMetric(Misclassification(), 1)
-        self.overlapping_metric = MultiMetric(LogLoss(), 0)
+        self.exclusive_metric = MultiMetric(Misclassification(), 0)
+        self.overlapping_metric = MultiMetric(LogLoss(), 1)
 
     def on_epoch_end(self, callback_data, model, epoch):
         """
@@ -50,9 +50,10 @@ class MisclassificationTest(Callback):
         """
         print('Misclassification error = %.1f%%' % (model.eval(self.valid, metric=self.metric) * 100))
 
+
 class LogLossTest(Callback):
     """
-    Callback for checking misclassification
+    Callback for checking log loss
     """
     def __init__(self, valid, metric):
         super(LogLossTest, self).__init__(epoch_freq=1)
@@ -65,17 +66,15 @@ class LogLossTest(Callback):
         """
         print('Log loss = %.4f' % model.eval(self.valid, metric=self.metric))
 
+
 class GCCallback(Callback):
     """
-    Callback for checking misclassification
+    Callback for triggering GC at epoch end
     """
     def __init__(self):
         super(GCCallback, self).__init__(epoch_freq=1)
 
     def on_epoch_end(self, callback_data, model, epoch):
-        """
-        Called when an epoch is about to end. this runs a validation set through the model and prints results.
-        """
         gc.collect()
 
 
