@@ -86,4 +86,4 @@ In order to install the Zimbra Machine learning server, you will need Python 3.4
 
 Clone the main zimbra-ml project into a directory. In that directory, add a "data" directory, where you will create additional subdirectories "meta", "models", "vocabularies", and "train". You may prepopulate the vocabularies sub-directory with glove or fasttext vocabulary files, which can be specified in the examples from the command line parameters.
 
-Ensure that you are in a virtual environment with the requirements installed, in the zimbra-ml working directory and run "python server.py". This will load and run the Zimbra machine learning server on port 8888 of the current machine. In a browser, go to http://localhost/graphiql to view and interact with the machine learning API.
+Ensure that you are in a virtual environment with the requirements installed, in the zimbra-ml working directory and run "python server.py". This will load and run the Zimbra machine learning server on port 8888 of the current machine. In a browser, go to http://localhost:8888/graphiql to view and interact with the machine learning API.
