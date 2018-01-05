@@ -10,7 +10,7 @@ import os
 import numpy as np
 from neon import NervanaObject
 from zmlcore.data.dataiterator import BatchIterator
-from zmlcore.smartfolders.classifier import EmailClassifier
+from zmlcore.smartfolders.classifier import TextClassifier
 
 
 class SentimentLoader(NervanaObject):
@@ -19,7 +19,7 @@ class SentimentLoader(NervanaObject):
         loads the IMDB dataset as published by Stanford for the following paper:
         http://www.aclweb.org/anthology/P11-1015
         """
-        assert isinstance(classifier, EmailClassifier)
+        assert isinstance(classifier, TextClassifier)
         if os.path.isdir(data_path):
             # get the folders in the directory
             # we care about train and test

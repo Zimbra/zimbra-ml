@@ -12,11 +12,24 @@ import numpy as np
 from collections import OrderedDict
 from zmlcore.licensed.datautils import ArrayFields
 
+
+def clean_text(text):
+    """
+    replaces the occurrence of 3 or more "word" characters with 3 of those same characters, for example:
+    (soooooo | soooo | sooooooooooo) -> sooo
+    yesssss! -> yesss!
+    :param text:
+    :return:
+    """
+    RE_DUPS = re.compile(r"([\w!?])\1{3,}")
+    return RE_DUPS.sub(r'\1\1\1', text)
+
+
 class Vocabularies(object):
     _vocabularies = {}
 
     @staticmethod
-    def gen_vocabulary(vocab_path, documents, n_first_words=60, size=int(1.0E7), save=True):
+    def gen_vocabulary(vocab_path, documents, regex, n_first_words=60, size=int(1.0E7), save=True):
         """
         :param vocab_dict:
         :param documents: list of strings of text of each document's content
@@ -28,7 +41,8 @@ class Vocabularies(object):
         stat = ArrayFields(np.zeros(len(stat_fields)), stat_fields)
 
         for text, i in zip(documents, range(1, len(documents) + 1)):
-            for w, _ in zip((s.group(0).lower() for s in re.finditer(r"\w+|[^\w\s]", text)),
+            text = clean_text(text)
+            for w, _ in zip((s.group(0).lower() for s in re.finditer(regex, text)),
                             range(n_first_words)):
                 stat.array = vocab_dict.setdefault(w, np.zeros(len(stat_fields), np.float32))
                 if stat.last_doc != i:

@@ -17,7 +17,7 @@ import graphene
 import urllib3
 import numpy as np
 import pickle
-from zmlcore.smartfolders.classifier import EmailClassifier
+from zmlcore.smartfolders.classifier import TextClassifier
 import uuid
 import email
 import json
@@ -41,7 +41,7 @@ class DEFAULTS:
     META_EXT = '.zml'
     TRAIN_EXT = '.train'
     OVERLAPPING = None
-    EXCLUSIVE = ['finance', 'promos', 'social', 'forums', 'updates']
+    EXCLUSIVE = None
     NUM_REQUESTS = 10
 
 http = urllib3.PoolManager(num_pools=DEFAULTS.NUM_REQUESTS)
@@ -365,14 +365,14 @@ class ClassifierQuery(graphene.ObjectType):
         # now check to see if it is instantiated as well
         c_info = _global_classifier_info.get(classifier_id, None)
         if c_info is None:
-            classifier = EmailClassifier(os.path.join(DEFAULTS.VOCAB_PATH, c_dict['vocab_path']),
-                                         os.path.join(DEFAULTS.MODEL_PATH, classifier_id + DEFAULTS.MODEL_EXT),
-                                         exclusive_classes=c_dict['exclusive_classes'],
-                                         overlapping_classes=c_dict['overlapping_classes'],
-                                         num_analytics_features=c_dict['num_features'],
-                                         num_subject_words=c_dict['num_subject_words'],
-                                         num_body_words=c_dict['num_body_words'],
-                                         lookup_size=c_dict['lookup_size'], lookup_dim=c_dict['lookup_dim'])
+            classifier = TextClassifier(os.path.join(DEFAULTS.VOCAB_PATH, c_dict['vocab_path']),
+                                        os.path.join(DEFAULTS.MODEL_PATH, classifier_id + DEFAULTS.MODEL_EXT),
+                                        exclusive_classes=c_dict['exclusive_classes'],
+                                        overlapping_classes=c_dict['overlapping_classes'],
+                                        num_analytics_features=c_dict['num_features'],
+                                        num_subject_words=c_dict['num_subject_words'],
+                                        num_body_words=c_dict['num_body_words'],
+                                        lookup_size=c_dict['lookup_size'], lookup_dim=c_dict['lookup_dim'])
 
             # get ID and store in our local dict as a cache
             _global_classifiers[classifier_id] = classifier
@@ -473,16 +473,16 @@ class CreateClassifier(graphene.Mutation):
             classifier_spec.vocab_path = \
                 classifier_spec['vocab_path'] = classifier_spec.classifier_id + DEFAULTS.VOCAB_EXT
 
-        classifier = EmailClassifier(os.path.join(DEFAULTS.VOCAB_PATH, classifier_spec.vocab_path),
-                                     os.path.join(DEFAULTS.MODEL_PATH,
+        classifier = TextClassifier(os.path.join(DEFAULTS.VOCAB_PATH, classifier_spec.vocab_path),
+                                    os.path.join(DEFAULTS.MODEL_PATH,
                                                   classifier_spec.classifier_id + DEFAULTS.MODEL_EXT),
-                                     exclusive_classes=classifier_spec.exclusive_classes,
-                                     overlapping_classes=classifier_spec.overlapping_classes,
-                                     num_analytics_features=classifier_spec.num_features,
-                                     num_subject_words=classifier_spec.num_subject_words,
-                                     num_body_words=classifier_spec.num_body_words,
-                                     lookup_size=classifier_spec.lookup_size,
-                                     lookup_dim=classifier_spec.lookup_dim)
+                                    exclusive_classes=classifier_spec.exclusive_classes,
+                                    overlapping_classes=classifier_spec.overlapping_classes,
+                                    num_analytics_features=classifier_spec.num_features,
+                                    num_subject_words=classifier_spec.num_subject_words,
+                                    num_body_words=classifier_spec.num_body_words,
+                                    lookup_size=classifier_spec.lookup_size,
+                                    lookup_dim=classifier_spec.lookup_dim)
 
         # get and ID and store in our local dict as a cache
         _global_classifiers[classifier_spec.classifier_id] = classifier
@@ -523,7 +523,7 @@ class TrainClassifier(graphene.Mutation):
 
         # if we failed to load, we would throw an exception past here
         classifier = _global_classifiers[training_spec.classifier_id]
-        assert isinstance(classifier, EmailClassifier)
+        assert isinstance(classifier, TextClassifier)
 
         if training_spec.train is None:
             # either we have a persisted training set, or we throw an error
@@ -544,31 +544,30 @@ class TrainClassifier(graphene.Mutation):
                 train_x, train_y, test_x, test_y = classifier.gen_training_set(
                     [email.message_from_bytes(get_content_as_str(em.url)) if em.text is None else
                      email.message_from_string(em.text) for em in training_spec.train.data],
-                    [training_spec.train.exclusive_targets, training_spec.train.overlapping_targets] if classifier.overlapping_classes else
-                    [training_spec.train.exclusive_targets],
+                    [t for t in [training_spec.train.exclusive_targets, training_spec.train.overlapping_targets] if
+                     t is not None],
                     features=None if training_spec.train.data[0].text_features is None else
                     [np.array(em.text_features.features) for em in training_spec.train.data],
                     test_content=None if training_spec.test is None else
                         [email.message_from_bytes(get_content_as_str(em.url)) if em.text is None else
                          email.message_from_string(em.text) for em in training_spec.test.data],
                     test_targets=None if training_spec.test is None else
-                        [training_spec.test.exclusive_targets, training_spec.test.overlapping_targets] if classifier.overlapping_classes else
-                        [training_spec.test.exclusive_targets],
+                    [t for t in [training_spec.test.exclusive_targets, training_spec.test.overlapping_targets] if
+                     t is not None],
                     test_features=None if training_spec.test is None or training_spec.test.data[0].text_features is None else
                         [np.array(em.text_features.features) for em in training_spec.test.data],
                     receiver_address=training_spec.train.receiver_address, holdout_pct=training_spec.holdout_pct)
             else:
                 train_x, train_y, test_x, test_y = classifier.gen_training_set(
                     [get_content_as_str(em.url) if em.text is None else em.text for em in training_spec.train.data],
-                    [training_spec.train.exclusive_targets, training_spec.train.overlapping_targets] if classifier.overlapping_classes else
-                    [training_spec.train.exclusive_targets],
+                    [t for t in [training_spec.train.exclusive_targets, training_spec.train.overlapping_targets] if
+                     t is not None],
                     features=None if training_spec.train.data[0].text_features is None else
                     [np.array(em.text_features.features) for em in training_spec.train.data],
                     test_content=None if training_spec.test is None else
                         [get_content_as_str(em.url) if em.text is None else em.text for em in training_spec.test.data],
                     test_targets=None if training_spec.test is None else
-                        [training_spec.test.exclusive_targets, training_spec.test.overlapping_targets] if classifier.overlapping_classes else
-                        [training_spec.test.exclusive_targets],
+                        [t for t in [training_spec.test.exclusive_targets, training_spec.test.overlapping_targets] if t is not None],
                     test_features=None if training_spec.test is None or training_spec.test.data[0].text_features is None else
                         [np.array(em.text_features.features) for em in training_spec.test.data],
                     holdout_pct=training_spec.holdout_pct)
@@ -583,9 +582,12 @@ class TrainClassifier(graphene.Mutation):
 
                     with open(os.path.join(DEFAULTS.TRAIN_PATH,
                                            training_spec.classifier_id + DEFAULTS.TRAIN_EXT), 'wb') as f:
-                        pickle.dump({'version': _version,
-                                     'train': (train_x, train_y),
-                                     'test': (test_x, test_y)}, f)
+                        try:
+                            pickle.dump({'version': _version,
+                                         'train': (train_x, train_y),
+                                         'test': (test_x, test_y)}, f)
+                        except Exception as e:
+                            print(e)
 
         classifier.train(train_x, train_y, test_content=test_x, test_targets=test_y, serialize=1,
                          save_path=os.path.join(DEFAULTS.MODEL_PATH, training_spec.classifier_id + DEFAULTS.MODEL_EXT),

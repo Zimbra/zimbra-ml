@@ -1,2 +1,2 @@
-from .smartfolders.classifier import EmailClassifier
-from .neonfixes.multimetric import MultiMetric
+from .smartfolders.classifier import TextClassifier
+from .neonfixes.metrics import MultiMetric

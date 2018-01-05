@@ -1,3 +1,10 @@
+# GraphQL Machine Learning Server
+Welcome to the open-source, Zimbra Machine Learning server for text and email classification. This server provides a solution for basic text classification requirements, including subject, sentiment, author, and social toxicity/obscenity, or an unlimited number of other classifications. All of this capability from defining a classifier to loading or creating a new vocabulary, training the classifier, and classifying content can be accessed through the GraphQL API or directly through the libraries.
+
+In the current version, classification is performed using a neural network designed by the server's original author, https://github.com/miketout, and described below. The neural network is a multi-input convolutional graph without pooling that is the same for all types of tasks.
+
+Using this general design, the Zimbra ML server can provide an easy to use API that offers competitive and acceptable classification results for many applications. While the neural networks currently perform competitively or better across a general set of tests than common LSTM or other convolutional architectures, there will always be room for improvement on these kinds of tasks as well as in pre-trained word vectors. As an open source project, we encourage data scientists or software developers interested in and capable of improving this classification server to fork the project and contact us about pull requests.
+
 # Automatic Text Classification
 
 As part of the Next Gen Zimbra server, we have implemented an automatic message text classification system, initially supporting email,  HTML and text, which will, by default, tag incoming messages with classification categories based on [insights published on automatic classification](https://arxiv.org/pdf/1606.09296.pdf) by Yahoo Research.
@@ -64,3 +71,19 @@ Additional features, such as analytics results will be combined with the convolu
 
 
 The current classifier allows selection and configuration of a wide variety of pre-trained, as well as custom vocabularies.
+
+# Current Project Status, Installation, and Setup
+The Zimbra Machine Learning Server is still a work in progress, but it is already quite capable. Example/test applications for training classifiers that are currently provided deliver competitive results on a variety of ML text classification benchmarks, including sentiment classification, author identification, and multi-class comment toxicity/threat/hate. In addition, the current Machine Learning Server, which enables the Zimbra Collaboration Server to deliver smart folder functionality also provides the foundation of an email and text data-mining capability that can extend far beyond smart folders.
+
+Some text classification tasks perform better using pre-trained word vector vocabularies, of which both FastText and Glove vectors are supported. For example, the Twitter Sentiment test does best with Twitter trained glove vectors. The author identification challenge however, as it includes less common vocabulary, performs much better with a custom vocabulary, which the Zimbra ML server can automatically create.
+
+While the code is prepared for subscriptions to support web-socket based training monitoring between mini-batches and epochs, the current GraphQL API does not yet publish this data from the ML callbacks. This is currently a todo item.
+
+In order to install the Zimbra Machine learning server, you will need Python 3.4 or greater and must also install:
+1. Fork of Intel's Nervana Neon [miketout's Neon fork](https://github.com/miketout/neon) that provides enhanced stability on CPUs and additional branching capabilities in its model graphs. The easiest way to install Nervana Neon is using virtualenv and Python 3.5+. It is also possible to use Miniconda, but to do so, you will need to update the main Miniconda Python libraries to include the source code of "ensurepip" after installation and before creating virtual environments. You will also need to install virtualenv using pip into the virtual environment that you create with miniconda. It sounds complicated, but I personally find it a great way to use more recent Python versions.
+2. TornadoQL [miketout's TornadoQL fork](https://github.com/miketout/tornadoql), providing graphene and Tornado Web Server integration for serving graphQL APIs.
+3. BeautifulSoup (pip install bs4)
+
+Clone the main zimbra-ml project into a directory. In that directory, add a "data" directory, where you will create additional subdirectories "meta", "models", "vocabularies", and "train". You may prepopulate the vocabularies sub-directory with glove or fasttext vocabulary files, which can be specified in the examples from the command line parameters.
+
+Ensure that you are in a virtual environment with the requirements installed, in the zimbra-ml working directory and run "python server.py". This will load and run the Zimbra machine learning server on port 8888 of the current machine. In a browser, go to http://localhost/graphiql to view and interact with the machine learning API.

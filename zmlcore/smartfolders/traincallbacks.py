@@ -6,7 +6,7 @@ Callbacks for reporting progress during training
 """
 from neon.callbacks.callbacks import Callback
 from neon.transforms.cost import Misclassification, LogLoss
-from ..neonfixes.multimetric import MultiMetric
+from ..neonfixes.metrics import MultiMetric
 import gc
 
 
@@ -39,15 +39,31 @@ class MisclassificationTest(Callback):
     """
     Callback for checking misclassification
     """
-    def __init__(self, valid):
+    def __init__(self, valid, metric):
         super(MisclassificationTest, self).__init__(epoch_freq=1)
         self.valid = valid
+        self.metric = metric
 
     def on_epoch_end(self, callback_data, model, epoch):
         """
         Called when an epoch is about to end. this runs a validation set through the model and prints results.
         """
-        print('Misclassification error = %.1f%%' % (model.eval(self.valid, metric=Misclassification()) * 100))
+        print('Misclassification error = %.1f%%' % (model.eval(self.valid, metric=self.metric) * 100))
+
+class LogLossTest(Callback):
+    """
+    Callback for checking misclassification
+    """
+    def __init__(self, valid, metric):
+        super(LogLossTest, self).__init__(epoch_freq=1)
+        self.valid = valid
+        self.metric = metric
+
+    def on_epoch_end(self, callback_data, model, epoch):
+        """
+        Called when an epoch is about to end. this runs a validation set through the model and prints results.
+        """
+        print('Log loss = %.4f' % model.eval(self.valid, metric=self.metric))
 
 class GCCallback(Callback):
     """

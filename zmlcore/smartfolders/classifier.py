@@ -40,8 +40,9 @@ import base64
 import re
 import uuid
 from zmlcore.data.dataiterator import BatchIterator
-from zmlcore.smartfolders.traincallbacks import MisclassificationTest
-from zmlcore.smartfolders.vocabularies import Vocabularies
+from zmlcore.smartfolders.traincallbacks import MisclassificationTest, LogLossTest
+from zmlcore.neonfixes.metrics import AverageLogLoss
+from zmlcore.smartfolders.vocabularies import Vocabularies, clean_text
 
 
 class Config:
@@ -61,10 +62,21 @@ class Config:
         Config.initialized = True
 
 
-class EmailClassifier(object):
+class TextClassifier(object):
     def __init__(self, vocab_path, model_path, optimizer=Adam(), overlapping_classes=None, exclusive_classes=None,
                  class_threshold=0.6, num_analytics_features=4, num_subject_words=8, num_body_words=52,
-                 network_type='conv_net', lookup_size=0, lookup_dim=0, name=str(uuid.uuid4())):
+                 network_type='conv_net', lookup_size=0, lookup_dim=0,
+                 regex=r"(:\s?\)|:-\)|\(\s?:|\(-:|:\'\)|"
+                       r":\s?D|:-D|x-?D|X-?D|"
+                       r";\)|;-\)|\(-;|\(;|;D|;-D|"
+                       r"<3|:\*|;\*|"
+                       r":\(|:-\(|\):|\)-:|"
+                       r":'\(|:,\(|:\"\(|"
+                       r"\(\(\(|\)\)\)|X-\(|\)-X|:\s?@|:-@|@\s?:|@-:|>:\(|\):<|" +
+                       '\U0001F620|' + '\U0001F595|' + '\U0001F612|' + '\U0001F608|' + '\U0001F480|' +
+                       '\U0001F4A2|' + '\U0001F4A3|' + '\u2620|' + '\uFE0F|' +
+                       r"\w+|[^\w\s\n]+)",
+                 name=str(uuid.uuid4())):
         """
         :param vocab_path:
         :param model_path:
@@ -81,6 +93,8 @@ class EmailClassifier(object):
         :param lookup_dim: dimensions of a lookup table if we have one
         :param name:
         """
+        assert (overlapping_classes is not None) or (exclusive_classes is not None)
+
         self.name = name
         self.num_subject_words = num_subject_words
         self.num_body_words = num_body_words
@@ -89,6 +103,8 @@ class EmailClassifier(object):
 
         self.lookup_dim = lookup_dim
         self.lookup_size = lookup_size
+
+        self.regex = regex
 
         self.vocab = Vocabularies.load_vocabulary(vocab_path)
         self.vocab_path = vocab_path
@@ -151,11 +167,13 @@ class EmailClassifier(object):
             self.zero_tensors = [self.be.zeros((1, self.num_words, self.wordvec_dimensions))]
             self.zeros = self.zero_tensors[0][:, 0, :].get()[0]
 
-        # use mutli-cost metric if we have both exclusive and overlapping classes
-        if self.overlapping_classes is None:
+        # use multi-cost metric if we have both exclusive and overlapping classes
+        if self.overlapping_classes is not None and self.exclusive_classes is not None:
+            self.cost = Multicost([GeneralizedCost(CrossEntropyMulti()), GeneralizedCost(SumSquared())])
+        elif self.overlapping_classes is None:
             self.cost = GeneralizedCost(CrossEntropyMulti())
         else:
-            self.cost = Multicost([GeneralizedCost(SumSquared()), GeneralizedCost(CrossEntropyMulti())])
+            self.cost = GeneralizedCost(SumSquared())
 
         # don't add an analytics tensor if we're content only
         if self.num_features > 0:
@@ -190,9 +208,10 @@ class EmailClassifier(object):
         :return:
         """
         RE_SPACES = re.compile(r'\s{3,}')
+        RE_DUPS = re.compile(r"(\w)\1{3,}")
         soup = BeautifulSoup(body, 'html.parser')
-        text = ' '.join([s for s in soup.strings if self.tag_visible(s)])
-        return RE_SPACES.sub(' ', text)
+        text = RE_SPACES.sub(' ', ' '.join([s for s in soup.strings if self.tag_visible(s)]))
+        return RE_DUPS.sub(r'\1\1', text)
 
     def extract_inline_text(self, part):
         """
@@ -228,7 +247,7 @@ class EmailClassifier(object):
                         text = self.visible_text(payload)
                     except Exception as e:
                         return ''
-                    result = ' '.join([s.group(0).lower() for s, _ in zip(re.finditer(r"\w+|[^\w\n\s]", text),
+                    result = ' '.join([s.group(0).lower() for s, _ in zip(re.finditer(self.regex, text),
                                                                           range(self.num_words))])
                     return result
                 else:
@@ -247,8 +266,9 @@ class EmailClassifier(object):
         :param text:
         :return:
         """
+        text = clean_text(text)
         text_vectors = [v for v, _ in zip((self.vocab[w] for
-                                           w in (s.group(0).lower() for s in re.finditer(r"\w+|[^\w\s]", text))
+                                           w in (s.group(0).lower() for s in re.finditer(self.regex, text))
                                            if not self.vocab.get(w, None) is None),
                                           range(self.num_words))]
         return text_vectors + [self.zeros for _ in range(self.num_words - len(text_vectors))]
@@ -298,12 +318,12 @@ class EmailClassifier(object):
                 subject = c[subject_key]
 
                 subject_v = [v for v, _ in zip((self.vocab[w] for w in
-                                                (s.group(0).lower() for s in re.finditer(r"\w+|[^\w\s]", subject))
+                                                (s.group(0).lower() for s in re.finditer(self.regex, subject))
                                                 if not self.vocab.get(w, None) is None),
                                                range(self.num_subject_words))]
 
                 body_v = [v for v, _ in zip((self.vocab[w] for w in
-                                             (s.group(0).lower() for s in re.finditer(r"\w+|[^\w\s]", c[text_key]))
+                                             (s.group(0).lower() for s in re.finditer(self.regex, c[text_key]))
                                              if not self.vocab.get(w, None) is None),
                                             range(self.num_body_words))]
 
@@ -402,6 +422,7 @@ class EmailClassifier(object):
 
             self.vocab = Vocabularies.gen_vocabulary(self.vocab_path,
                                                      docs,
+                                                     self.regex,
                                                      n_first_words=10000,
                                                      size=self.lookup_size)
 
@@ -418,33 +439,36 @@ class EmailClassifier(object):
             test_content[0] = test_content[0].reshape((len(test_content[0]),
                                                        1, self.num_words, len(test_content[0][0])))
 
+            # get the targets with both exclusive and overlapping targets if present
+            ol_idx = 0
+            ex_targets = None
+            ol_targets = None
+            if self.exclusive_classes is not None:
+                ex_targets = [np.array([1 if xt == self.neuralnet.exclusive_classes[i]
+                                        else 0 for i in range(len(self.neuralnet.exclusive_classes))], dtype=np.float32)
+                              for xt in test_targets[0]]
+                ol_idx += 1
+            if self.overlapping_classes is not None:
+                ol_targets = [np.array([1 if self.neuralnet.overlapping_classes[i] in xt
+                                        else 0 for i in range(len(self.neuralnet.overlapping_classes))],
+                                       dtype=np.float32)
+                              for xt in test_targets[ol_idx]]
+            test_targets = [t for t in [ex_targets, ol_targets] if t is not None]
+
+        ol_idx = 0
+        ex_targets = None
+        ol_targets = None
+        if self.exclusive_classes is not None:
             ex_targets = [np.array([1 if xt == self.neuralnet.exclusive_classes[i]
                                     else 0 for i in range(len(self.neuralnet.exclusive_classes))], dtype=np.float32)
-                          for xt in test_targets[0]]
-            if have_ol:
-                test_targets = [ex_targets,
-                                [np.array([1 if self.neuralnet.overlapping_classes[i] in xt
-                                           else 0 for i in range(len(self.neuralnet.overlapping_classes))],
-                                          dtype=np.float32)
-                                 for xt in test_targets[1]]]
-            else:
-                test_targets = [ex_targets]
-
-        # now:
-        # classes = list of the two class lists for exclusive and overlapping or just exclusive and None
-        # targets = a list containing one list of single class names for exclusive classes or
-        #   that + another list of lists of class names for overlapping classes
-        ex_targets = [np.array([1 if xt == self.neuralnet.exclusive_classes[i]
-                                else 0 for i in range(len(self.neuralnet.exclusive_classes))], dtype=np.float32)
-                      for xt in targets[0]]
-
-        if have_ol:
-            targets = [ex_targets,
-                       [np.array([1 if self.neuralnet.overlapping_classes[i] in xt
-                                  else 0 for i in range(len(self.neuralnet.overlapping_classes))], dtype=np.float32)
-                        for xt in targets[1]]]
-        else:
-            targets = [ex_targets]
+                          for xt in targets[0]]
+            ol_idx += 1
+        if self.overlapping_classes is not None:
+            ol_targets = [np.array([1 if self.neuralnet.overlapping_classes[i] in xt
+                                    else 0 for i in range(len(self.neuralnet.overlapping_classes))],
+                                   dtype=np.float32)
+                          for xt in targets[ol_idx]]
+        targets = [t for t in [ex_targets, ol_targets] if t is not None]
 
         # if necessary, shuffle and split holdout set
         if holdout_pct > 0.0:
@@ -484,8 +508,14 @@ class EmailClassifier(object):
         :param epochs:
         :return:
         """
-        # if we also have overlapping targets, add them
-        have_ol = not self.overlapping_classes is None
+        multicost = self.exclusive_classes is not None and self.overlapping_classes is not None
+
+        if multicost:
+            metric = MultiMetric(Misclassification(), 0)
+        elif self.overlapping_classes is None:
+            metric = Misclassification()
+        else:
+            metric = AverageLogLoss()
 
         print('Training neural networks on {} samples for {} epochs.'.format(len(targets[0]), epochs))
 
@@ -500,20 +530,22 @@ class EmailClassifier(object):
                               targets=targets,
                               steps=[1] if has_features else [1, 1])
 
-        callbacks = Callbacks(self.neuralnet, train_set=train, multicost=have_ol,
-                              metric=MultiMetric(Misclassification(), 0) if have_ol else Misclassification(),
+        callbacks = Callbacks(self.neuralnet, train_set=train, multicost=multicost, metric=metric,
                               eval_freq=None if valid is None else 1, eval_set=valid)
                               #save_path=save_path, serialize=serialize)
         if serialize:
             callbacks.add_save_best_state_callback(save_path)
 
-        metric = MultiMetric(Misclassification(), 0) if have_ol else Misclassification()
-
         if not valid is None:
-            print('Starting misclassification error = {:.03}%'.format(self.neuralnet.eval(valid, metric)[0] * 100))
-            callbacks.add_callback(MisclassificationTest(valid))
+            if self.exclusive_classes is not None:
+                print('Starting misclassification error = {:.03}%'.format(self.neuralnet.eval(valid, metric)[0] * 100))
+                callbacks.add_callback(MisclassificationTest(valid, metric))
+            else:
+                print('Starting average logloss = {:.04}'.format(self.neuralnet.eval(valid, metric)[0]))
+                callbacks.add_callback(LogLossTest(valid, metric))
         if hasattr(self.optimizer, 'learning_rate'):
             self.optimizer.learning_rate = learning_rate
+            print('learning rate = {}'.format(learning_rate))
         self.fit(train, self.optimizer, epochs, callbacks)
 
     def numeric_to_text_classes(self, classes):
@@ -527,7 +559,10 @@ class EmailClassifier(object):
         """
         assert isinstance(classes, list)
 
-        if isinstance(classes[0], list) or isinstance(classes[0], tuple):
+        if self.exclusive_classes is None:
+            return [self.overlapping_classes[i] for i in range(len(self.overlapping_classes))
+                      for nc in classes if nc[0][i] > self.class_threshold]
+        elif isinstance(classes[0], list) or isinstance(classes[0], tuple):
             # assume exclusive followed by overlapping for now
             assert len(classes[0]) == 2
             return [[self.neuralnet.exclusive_classes[np.argmax(nc[0])],

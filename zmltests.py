@@ -15,8 +15,8 @@ from neon.backends import gen_backend
 from neon.optimizers import Adam
 from neon.callbacks.callbacks import Callbacks, TrainMulticostCallback
 from neon.transforms.cost import Misclassification
-from zmlcore.neonfixes.multimetric import MultiMetric
-from zmlcore.smartfolders.classifier import EmailClassifier, Config
+from zmlcore.neonfixes.metrics import MultiMetric
+from zmlcore.smartfolders.classifier import TextClassifier, Config
 from zmlcore.smartfolders.traincallbacks import TrainingProgress, MisclassificationTest
 from zmlcore.data.dataiterator import TrainingIterator, BatchIterator
 from zmlcore.data.sentiment_loader import SentimentLoader
@@ -96,10 +96,10 @@ if __name__ == '__main__':
         if options.sentiment_path is None else ['positive', 'negative']
 
     if options.sentiment_path:
-        classifier = EmailClassifier(options.word_vectors, options.model_file, optimizer=optimizer,
-                                     num_analytics_features=0, num_subject_words=0, num_body_words=60,
-                                     overlapping_classes=overlapping_classes, exclusive_classes=exclusive_classes,
-                                     network_type=options.network_type)
+        classifier = TextClassifier(options.word_vectors, options.model_file, optimizer=optimizer,
+                                    num_analytics_features=0, num_subject_words=0, num_body_words=60,
+                                    overlapping_classes=overlapping_classes, exclusive_classes=exclusive_classes,
+                                    network_type=options.network_type)
 
         # we will supercede the email classification function to test the content classification network only
         print('loading sentiment data from {}'.format(options.sentiment_path))
@@ -113,18 +113,18 @@ if __name__ == '__main__':
 
         callbacks = Callbacks(classifier.neuralnet, eval_freq=1, eval_set=sdata.test,
                               metric=Misclassification())
-        callbacks.add_callback(MisclassificationTest(sdata.test))
+        callbacks.add_callback(MisclassificationTest(sdata.test, Misclassification()))
         print('Training neural networks on {} samples for {} epochs'.format(sdata.train.targets[0].shape[1],
                                                                             options.epochs))
         classifier.fit(sdata.train, optimizer, options.epochs, callbacks)
         print('finished sentiment classification test, exiting')
         exit(0)
 
-    classifier = EmailClassifier(options.word_vectors, options.model_file, optimizer=optimizer,
-                                 num_analytics_features=0 if options.sentiment_path else 4,
-                                 overlapping_classes=overlapping_classes, exclusive_classes=exclusive_classes,
-                                 network_type=options.network_type, lookup_size=options.lookup_size,
-                                 lookup_dim=options.lookup_dim)
+    classifier = TextClassifier(options.word_vectors, options.model_file, optimizer=optimizer,
+                                num_analytics_features=0 if options.sentiment_path else 4,
+                                overlapping_classes=overlapping_classes, exclusive_classes=exclusive_classes,
+                                network_type=options.network_type, lookup_size=options.lookup_size,
+                                lookup_dim=options.lookup_dim)
 
     # determine if we expect to use a csv file or a maildir as our data source
     if os.path.isfile(options.data_path):

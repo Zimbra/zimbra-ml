@@ -1,1 +1,1 @@
-from .classifier import EmailClassifier
+from .classifier import TextClassifier

@@ -18,19 +18,16 @@ from zmlcore.licensed.layers import NoisyDropout, OutputDeltaBuffer
 class ClassifierNetwork(Model):
     def __init__(self, overlapping_classes=None, exclusive_classes=None, analytics_input=True,
                  network_type='conv_net', num_words=60, width=100, lookup_size=0, lookup_dim=0, optimizer=Adam()):
+        assert (overlapping_classes is not None) or (exclusive_classes is not None)
+
         self.width = width
         self.num_words = num_words
         self.overlapping_classes = overlapping_classes
+        self.exclusive_classes = exclusive_classes
         self.analytics_input = analytics_input
         self.recurrent = network_type == 'lstm'
         self.lookup_size = lookup_size
         self.lookup_dim = lookup_dim
-
-        # we must have some exclusive classes
-        if exclusive_classes is None:
-            self.exclusive_classes = ['finance', 'promos', 'social', 'forums', 'updates']
-        else:
-            self.exclusive_classes = exclusive_classes
 
         init = GlorotUniform()
         activation = Rectlin(slope=1E-05)
@@ -40,6 +37,8 @@ class ClassifierNetwork(Model):
 
         if self.overlapping_classes is None:
             output_layers = [Affine(len(self.exclusive_classes), init, activation=Softmax())]
+        elif self.exclusive_classes is None:
+            output_layers = [Affine(len(self.overlapping_classes), init, activation=Logistic())]
         else:
             output_branch = BranchNode(name='exclusive_overlapping')
             output_layers = Tree([[SkipNode(),
