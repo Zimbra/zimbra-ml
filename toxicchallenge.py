@@ -15,7 +15,7 @@ import os
 import json
 from collections import OrderedDict
 
-_DEBUG = True
+_DEBUG = False
 _DEBUG_SAMPLE_SIZE = 50000
 
 class ToxicChallenge:

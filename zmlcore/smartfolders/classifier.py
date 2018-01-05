@@ -25,7 +25,7 @@ from email.utils import getaddresses
 import numpy as np
 from .neuralnetwork import ClassifierNetwork
 from neon.layers import Multicost, GeneralizedCost
-from neon.transforms import CrossEntropyMulti, SumSquared
+from neon.transforms import CrossEntropyBinary, CrossEntropyMulti, SumSquared, MeanSquared, SmoothL1Loss
 from neon.transforms.cost import MultiMetric, Misclassification
 from neon.callbacks.callbacks import Callbacks
 from neon.optimizers import Adam
@@ -169,11 +169,12 @@ class TextClassifier(object):
 
         # use multi-cost metric if we have both exclusive and overlapping classes
         if self.overlapping_classes is not None and self.exclusive_classes is not None:
-            self.cost = Multicost([GeneralizedCost(CrossEntropyMulti()), GeneralizedCost(SumSquared())])
+            self.cost = Multicost([GeneralizedCost(CrossEntropyMulti()),
+                                   GeneralizedCost(CrossEntropyBinary())])
         elif self.overlapping_classes is None:
             self.cost = GeneralizedCost(CrossEntropyMulti())
         else:
-            self.cost = GeneralizedCost(SumSquared())
+            self.cost = GeneralizedCost(CrossEntropyBinary())
 
         # don't add an analytics tensor if we're content only
         if self.num_features > 0:
@@ -181,7 +182,6 @@ class TextClassifier(object):
             self.neuralnet.initialize([t.shape for t in self.zero_tensors], cost=self.cost)
         else:
             self.neuralnet.initialize(self.zero_tensors[0].shape, cost=self.cost)
-
 
     def fit(self, dataset, optimizer, num_epochs, callbacks):
         self.neuralnet.fit(dataset, self.cost, optimizer, num_epochs, callbacks)
