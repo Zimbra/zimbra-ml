@@ -65,7 +65,7 @@ class Config:
 class TextClassifier(object):
     def __init__(self, vocab_path, model_path, optimizer=Adam(), overlapping_classes=None, exclusive_classes=None,
                  class_threshold=0.6, num_analytics_features=4, num_subject_words=8, num_body_words=52,
-                 network_type='conv_net', lookup_size=0, lookup_dim=0,
+                 network_type='conv_net', preserve_case=True, lookup_size=0, lookup_dim=0,
                  regex=r"(:\s?\)|:-\)|\(\s?:|\(-:|:\'\)|"
                        r":\s?D|:-D|x-?D|X-?D|"
                        r";\)|;-\)|\(-;|\(;|;D|;-D|"
@@ -103,6 +103,8 @@ class TextClassifier(object):
 
         self.lookup_dim = lookup_dim
         self.lookup_size = lookup_size
+
+        self.preserve_case = preserve_case
 
         self.regex = regex
 
@@ -194,6 +196,12 @@ class TextClassifier(object):
         """
         return self.neuralnet.be
 
+    def set_case(self, s):
+        if self.preserve_case:
+            return s
+        else:
+            return s.lower()
+
     def tag_visible(self, element):
         if element.parent.name in ('style', 'script', 'head', 'title', 'meta', '[document]'):
             return False
@@ -211,7 +219,7 @@ class TextClassifier(object):
         RE_DUPS = re.compile(r"(\w)\1{3,}")
         soup = BeautifulSoup(body, 'html.parser')
         text = RE_SPACES.sub(' ', ' '.join([s for s in soup.strings if self.tag_visible(s)]))
-        return RE_DUPS.sub(r'\1\1', text)
+        return RE_DUPS.sub(r'\1\1\1', text)
 
     def extract_inline_text(self, part):
         """
@@ -247,7 +255,7 @@ class TextClassifier(object):
                         text = self.visible_text(payload)
                     except Exception as e:
                         return ''
-                    result = ' '.join([s.group(0).lower() for s, _ in zip(re.finditer(self.regex, text),
+                    result = ' '.join([self.set_case(s.group(0)) for s, _ in zip(re.finditer(self.regex, text),
                                                                           range(self.num_words))])
                     return result
                 else:
@@ -268,7 +276,7 @@ class TextClassifier(object):
         """
         text = clean_text(text)
         text_vectors = [v for v, _ in zip((self.vocab[w] for
-                                           w in (s.group(0).lower() for s in re.finditer(self.regex, text))
+                                           w in (self.set_case(s.group(0)) for s in re.finditer(self.regex, text))
                                            if not self.vocab.get(w, None) is None),
                                           range(self.num_words))]
         return text_vectors + [self.zeros for _ in range(self.num_words - len(text_vectors))]
@@ -300,7 +308,7 @@ class TextClassifier(object):
                 to_key: getaddresses(c.get_all(to_key, [])),
                 cc_key: getaddresses(c.get_all(cc_key, [])),
                 resent_key: getaddresses(c.get_all('resent-to', []) + c.get_all('resent-cc', [])),
-                subject_key: c.get(subject_key, '').lower() if isinstance(c.get(subject_key, ''), str) else '',
+                subject_key: self.set_case(c.get(subject_key, '')) if isinstance(c.get(subject_key, ''), str) else '',
                 text_key: ''.join([self.extract_inline_text(p) for p in c.walk()])
                     if c.is_multipart() else self.extract_inline_text(c)
             } for c in content]
@@ -318,12 +326,12 @@ class TextClassifier(object):
                 subject = c[subject_key]
 
                 subject_v = [v for v, _ in zip((self.vocab[w] for w in
-                                                (s.group(0).lower() for s in re.finditer(self.regex, subject))
+                                                (self.set_case(s.group(0)) for s in re.finditer(self.regex, subject))
                                                 if not self.vocab.get(w, None) is None),
                                                range(self.num_subject_words))]
 
                 body_v = [v for v, _ in zip((self.vocab[w] for w in
-                                             (s.group(0).lower() for s in re.finditer(self.regex, c[text_key]))
+                                             (self.set_case(s.group(0)) for s in re.finditer(self.regex, c[text_key]))
                                              if not self.vocab.get(w, None) is None),
                                             range(self.num_body_words))]
 
@@ -413,7 +421,7 @@ class TextClassifier(object):
         if self.vocab is None:
             # we need to generate a vocabulary from the training data
             if isinstance(content[0], email.message.Message):
-                docs = [' '.join([c.get('subject', '').lower() if isinstance(c.get('subject', ''), str) else '',
+                docs = [' '.join([self.set_case(c.get('subject', '')) if isinstance(c.get('subject', ''), str) else '',
                                   ' '.join([self.extract_inline_text(p) for p in c.walk()])
                                   if c.is_multipart() else self.extract_inline_text(c)])
                         for c in content]
@@ -423,6 +431,7 @@ class TextClassifier(object):
             self.vocab = Vocabularies.gen_vocabulary(self.vocab_path,
                                                      docs,
                                                      self.regex,
+                                                     preserve_case=self.preserve_case,
                                                      n_first_words=10000,
                                                      size=self.lookup_size)
 

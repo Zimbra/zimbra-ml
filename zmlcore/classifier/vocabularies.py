@@ -29,12 +29,13 @@ class Vocabularies(object):
     _vocabularies = {}
 
     @staticmethod
-    def gen_vocabulary(vocab_path, documents, regex, n_first_words=60, size=int(1.0E7), save=True):
+    def gen_vocabulary(vocab_path, documents, regex, preserve_case=False, n_first_words=60, size=int(1.0E7), save=True):
         """
         :param vocab_dict:
         :param documents: list of strings of text of each document's content
         :param n_first_words: the number of words to use from the beginning of each document
         :param size:
+        :param save:
         """
         vocab_dict = OrderedDict() # an ordered dict allows us to map from value to key by position
         stat_fields = ['total_count', 'doc_count', 'last_doc', 'avg_tf_idf', 'idf']
@@ -42,7 +43,7 @@ class Vocabularies(object):
 
         for text, i in zip(documents, range(1, len(documents) + 1)):
             text = clean_text(text)
-            for w, _ in zip((s.group(0).lower() for s in re.finditer(regex, text)),
+            for w, _ in zip((s.group(0) if preserve_case else s.group(0).lower() for s in re.finditer(regex, text)),
                             range(n_first_words)):
                 stat.array = vocab_dict.setdefault(w, np.zeros(len(stat_fields), np.float32))
                 if stat.last_doc != i:
