@@ -65,7 +65,7 @@ class Config:
 class TextClassifier(object):
     def __init__(self, vocab_path, model_path, optimizer=Adam(), overlapping_classes=None, exclusive_classes=None,
                  class_threshold=0.6, num_analytics_features=4, num_subject_words=8, num_body_words=52,
-                 network_type='conv_net', preserve_case=True, lookup_size=0, lookup_dim=0,
+                 network_type='conv_net', preserve_case=False, lookup_size=0, lookup_dim=0,
                  regex=r"(:\s?\)|:-\)|\(\s?:|\(-:|:\'\)|"
                        r":\s?D|:-D|x-?D|X-?D|"
                        r";\)|;-\)|\(-;|\(;|;D|;-D|"
