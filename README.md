@@ -1,7 +1,7 @@
 # GraphQL Machine Learning Server
 Welcome to the open-source, Zimbra Machine Learning server for text and email classification. This server provides a solution for basic text classification requirements, including smartfolders by topic, sentiment, author, and social toxicity/obscenity, or an unlimited number of other classifications. All of this capability from defining a classifier to loading or creating a new vocabulary, training the classifier, and classifying content can be accessed through the GraphQL API or directly through the libraries.
 
-In the current version, classification is performed using a neural network designed by the server's original author, [Michael Toutonghi](https://github.com/miketout), and described below. The neural network is a multi-input convolutional graph without pooling that is the same for all types of tasks.
+In the current version, classification is performed using a neural network designed by the server's original author and described below. The neural network is a multi-input convolutional graph without pooling that is the same for all types of tasks.
 
 Using this general design, the Zimbra ML server can provide an easy to use API that offers competitive and acceptable classification results for many applications. While the neural networks currently perform competitively or better across a general set of tests than common LSTM or other convolutional architectures, there will always be room for improvement on these kinds of tasks as well as in pre-trained word vectors. As an open source project, we encourage data scientists or software developers interested in and capable of improving this classification server to fork the project and contact us about pull requests.
 
