@@ -43,7 +43,7 @@ pytest-cov==2.3.1
 pytest-mock==1.6.0
 python-dateutil==2.6.1
 pytz==2017.3
-PyYAML==3.12
+PyYAML==5.1
 requests==2.18.4
 Rx==1.6.0
 scipy==1.0.0
