@@ -44,7 +44,7 @@ pytest-mock==1.6.0
 python-dateutil==2.6.1
 pytz==2017.3
 PyYAML==3.12
-requests==2.18.4
+requests==2.20.0
 Rx==1.6.0
 scipy==1.0.0
 six==1.11.0
