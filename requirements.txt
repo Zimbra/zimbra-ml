@@ -28,7 +28,7 @@ MarkupSafe==1.0
 mccabe==0.5.3
 pandas==0.21.0
 pep8==1.7.0
-Pillow==3.3.1
+Pillow==8.2.0
 posix-ipc==1.0.0
 promise==2.1
 py==1.5.2
